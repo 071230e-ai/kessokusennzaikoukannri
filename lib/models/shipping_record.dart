@@ -1,46 +1,23 @@
-import 'package:hive/hive.dart';
+class ShippingRecord {
+  final String id;
+  final int itemId;
+  final int locationId;
 
-part 'shipping_record.g.dart';
-
-@HiveType(typeId: 2)
-class ShippingRecord extends HiveObject {
-  @HiveField(0)
-  String id;
-
-  @HiveField(1)
-  String stockItemId;
-
-  @HiveField(2)
-  String category;
-
-  @HiveField(3)
-  String spec;
-
-  @HiveField(4)
-  String unit;
-
-  @HiveField(5)
-  DateTime shippingDate;
-
-  @HiveField(6)
-  double quantity;
-
-  @HiveField(7)
-  String? destination; // 出荷先・使用場所
-
-  @HiveField(8)
-  String? staff; // 担当者
-
-  @HiveField(9)
-  String? note;
-
-  /// 保管場所（'本社工場' / '第二工場'）。
-  /// 旧データで未設定の場合は '本社工場' として扱う。
-  @HiveField(10)
-  String location;
+  final String stockItemId;
+  final String category;
+  final String spec;
+  final String unit;
+  final DateTime shippingDate;
+  final double quantity;
+  final String? destination;
+  final String? staff;
+  final String? note;
+  final String location;
 
   ShippingRecord({
     required this.id,
+    required this.itemId,
+    required this.locationId,
     required this.stockItemId,
     required this.category,
     required this.spec,
@@ -52,4 +29,24 @@ class ShippingRecord extends HiveObject {
     this.note,
     this.location = '本社工場',
   });
+
+  factory ShippingRecord.fromApi(Map<String, dynamic> r) {
+    final itemId = (r['item_id'] as num).toInt();
+    final locId = (r['location_id'] as num).toInt();
+    return ShippingRecord(
+      id: r['id'] as String,
+      itemId: itemId,
+      locationId: locId,
+      stockItemId: '${itemId}_$locId',
+      category: r['category'] as String,
+      spec: r['spec'] as String,
+      unit: r['unit'] as String,
+      shippingDate: DateTime.parse(r['shipping_date'] as String),
+      quantity: (r['quantity'] as num).toDouble(),
+      destination: r['destination'] as String?,
+      staff: r['staff'] as String?,
+      note: r['note'] as String?,
+      location: r['location'] as String,
+    );
+  }
 }

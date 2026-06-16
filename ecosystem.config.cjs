@@ -1,17 +1,19 @@
+// PM2 設定: Cloudflare Pages + Functions + D1 をローカル実行
+//
+// `wrangler pages dev` は build/web の静的ファイルを配信しつつ、
+// functions/ ディレクトリ配下を /api/* として処理し、
+// --d1=DB によりローカル SQLite が DB バインドにマップされる。
 module.exports = {
   apps: [
     {
       name: 'wire-stock-manager',
       script: 'npx',
-      args: 'http-server build/web -p 3000 -a 0.0.0.0 -c-1 --cors',
-      cwd: '/home/user/webapp',
-      env: {
-        NODE_ENV: 'development',
-        PORT: 3000
-      },
+      args:
+        'wrangler pages dev build/web --ip 0.0.0.0 --port 3000',
+      env: { NODE_ENV: 'development' },
       watch: false,
       instances: 1,
-      exec_mode: 'fork'
-    }
-  ]
-}
+      exec_mode: 'fork',
+    },
+  ],
+};

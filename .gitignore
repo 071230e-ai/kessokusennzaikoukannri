@@ -39,6 +39,11 @@ node_modules/
 .pm2/
 *.tar.gz
 
+# Cloudflare Wrangler (local state, builds, temp files)
+.wrangler/
+wrangler.jsonc.bak
+.dev.vars
+
 # Symbolication related
 app.*.symbols
 

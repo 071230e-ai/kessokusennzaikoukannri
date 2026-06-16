@@ -1,190 +1,102 @@
 import 'package:flutter/foundation.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:uuid/uuid.dart';
 import '../models/stock_item.dart';
 import '../models/delivery_record.dart';
 import '../models/shipping_record.dart';
+import '../services/api_client.dart';
 
+/// Cloudflare D1（Pages Functions API）ベースの在庫プロバイダ。
+///
+/// 公開API（プロパティ・メソッド名）は旧 Hive 実装と互換性を保つ。
+/// 内部で `/api/stocks` `/api/deliveries` `/api/shipments` を呼び出し、
+/// メモリ上にキャッシュ → mutation のたびにサーバから再取得する。
 class StockProvider extends ChangeNotifier {
+  // =====================================================================
+  // 定数
+  // =====================================================================
+  // (旧 Hive 互換用に残す。新実装では未使用)
   static const String stockBoxName = 'stock_items';
   static const String deliveryBoxName = 'delivery_records';
   static const String shippingBoxName = 'shipping_records';
 
-  // ---- 保管場所定数 ----
   static const String locationHonsha = '本社工場';
   static const String locationDaini = '第二工場';
   static const List<String> locations = [locationHonsha, locationDaini];
 
-  late Box<StockItem> _stockBox;
-  late Box<DeliveryRecord> _deliveryBox;
-  late Box<ShippingRecord> _shippingBox;
+  // =====================================================================
+  // 状態
+  // =====================================================================
+  bool _isLoading = false;
+  bool _isInitialized = false;
+  String? _lastError;
 
-  final _uuid = const Uuid();
+  List<StockItem> _stockItems = [];
+  List<DeliveryRecord> _deliveryRecords = [];
+  List<ShippingRecord> _shippingRecords = [];
 
-  // --- 品目の正規の並び順（カテゴリ・規格の定義順） ---
-  static const List<Map<String, String>> _itemOrder = [
-    {'category': '結束線', 'spec': '350mm'},
-    {'category': '結束線', 'spec': '400mm'},
-    {'category': '結束線', 'spec': '450mm'},
-    {'category': '結束線', 'spec': '500mm'},
-    {'category': '結束線', 'spec': '550mm'},
-    {'category': '結束線', 'spec': '600mm'},
-    {'category': '結束線', 'spec': '650mm'},
-    {'category': '結束線', 'spec': '700mm'},
-    {'category': 'メッキ結束線', 'spec': '350mm'},
-    {'category': 'メッキ結束線', 'spec': '400mm'},
-    {'category': 'メッキ結束線', 'spec': '450mm'},
-    {'category': 'メッキ結束線', 'spec': '500mm'},
-    {'category': 'メッキ結束線', 'spec': '550mm'},
-    {'category': 'メッキ結束線', 'spec': '600mm'},
-    {'category': 'メッキ結束線', 'spec': '650mm'},
-    {'category': 'メッキ結束線', 'spec': '700mm'},
-    {'category': '18番結束線', 'spec': '550mm'},
-    {'category': '18番結束線', 'spec': '700mm'},
-    {'category': 'タイワイヤ', 'spec': '-'},
-  ];
+  /// category|spec → 表示順
+  final Map<String, int> _itemOrderMap = {};
 
-  /// 品目の定義順インデックスを返す
-  int _itemSortIndex(String category, String spec) {
-    for (int i = 0; i < _itemOrder.length; i++) {
-      if (_itemOrder[i]['category'] == category &&
-          _itemOrder[i]['spec'] == spec) {
-        return i;
-      }
-    }
-    return _itemOrder.length;
-  }
+  bool get isLoading => _isLoading;
+  bool get isInitialized => _isInitialized;
+  String? get lastError => _lastError;
 
-  /// 場所の並び順インデックス（本社→第二）
-  int _locationSortIndex(String location) {
-    final i = locations.indexOf(location);
-    return i < 0 ? locations.length : i;
-  }
+  // 公開ゲッター（旧API互換）
+  List<StockItem> get stockItems => List.unmodifiable(_stockItems);
+  List<DeliveryRecord> get deliveryRecords => List.unmodifiable(_deliveryRecords);
+  List<ShippingRecord> get shippingRecords => List.unmodifiable(_shippingRecords);
 
-  /// 定義順（品目→場所）にソートされた全在庫リスト
-  List<StockItem> get stockItems {
-    final list = _stockBox.values.toList();
-    list.sort((a, b) {
-      final c = _itemSortIndex(a.category, a.spec)
-          .compareTo(_itemSortIndex(b.category, b.spec));
-      if (c != 0) return c;
-      return _locationSortIndex(a.location)
-          .compareTo(_locationSortIndex(b.location));
-    });
-    return list;
-  }
-
-  List<DeliveryRecord> get deliveryRecords =>
-      _deliveryBox.values.toList()
-        ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
-
-  List<ShippingRecord> get shippingRecords =>
-      _shippingBox.values.toList()
-        ..sort((a, b) => b.shippingDate.compareTo(a.shippingDate));
+  // =====================================================================
+  // 初期化／リロード
+  // =====================================================================
 
   Future<void> initialize() async {
-    _stockBox = Hive.box<StockItem>(stockBoxName);
-    _deliveryBox = Hive.box<DeliveryRecord>(deliveryBoxName);
-    _shippingBox = Hive.box<ShippingRecord>(shippingBoxName);
-
-    if (_stockBox.isEmpty) {
-      await _initializeDefaultItems();
-    } else {
-      // 既存ユーザー向け：定義に存在しない品目・場所だけを追加
-      await _ensureMasterItems();
-    }
-
-    // 既存データの単位マイグレーション（タイワイヤ：箱 → 個）
-    // 数量は変更せず、表示単位のみ更新する。
-    await _migrateTaiwireUnit();
+    await refreshAll();
+    _isInitialized = true;
+    notifyListeners();
   }
 
-  /// タイワイヤの単位を「箱」から「個」へ更新するマイグレーション。
-  /// 既存の数量・履歴は変更しない。すでに「個」のレコードはスキップ。
-  Future<void> _migrateTaiwireUnit() async {
-    // 在庫品目
-    for (final item in _stockBox.values) {
-      if (item.category == 'タイワイヤ' && item.unit == '箱') {
-        item.unit = '個';
-        await item.save();
-      }
-    }
-    // 納入履歴
-    for (final rec in _deliveryBox.values) {
-      if (rec.category == 'タイワイヤ' && rec.unit == '箱') {
-        rec.unit = '個';
-        await rec.save();
-      }
-    }
-    // 出荷・使用履歴
-    for (final rec in _shippingBox.values) {
-      if (rec.category == 'タイワイヤ' && rec.unit == '箱') {
-        rec.unit = '個';
-        await rec.save();
-      }
-    }
-  }
+  /// 全データをサーバから再取得する。
+  Future<void> refreshAll() async {
+    _isLoading = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      // 並列に取得
+      final results = await Future.wait([
+        ApiClient.getJson('/api/stocks'),
+        ApiClient.getJson('/api/deliveries'),
+        ApiClient.getJson('/api/shipments'),
+      ]);
+      final stocksJson = (results[0]['stocks'] as List?) ?? [];
+      final delsJson = (results[1]['deliveries'] as List?) ?? [];
+      final shpsJson = (results[2]['shipments'] as List?) ?? [];
 
-  /// 全マスタ品目（カテゴリ・規格・単位・既定下限）の定義
-  static const List<Map<String, dynamic>> _masterItemBase = [
-    {'category': '結束線',      'spec': '350mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '400mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '450mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '500mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '600mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '650mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '結束線',      'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '350mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '400mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '450mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '500mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '600mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '650mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'メッキ結束線', 'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '18番結束線',  'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': '18番結束線',  'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
-    {'category': 'タイワイヤ',   'spec': '-',     'unit': '個', 'threshold': 5.0},
-  ];
+      _stockItems = stocksJson
+          .map((r) => StockItem.fromStockRow(r as Map<String, dynamic>))
+          .toList();
+      _deliveryRecords = delsJson
+          .map((r) => DeliveryRecord.fromApi(r as Map<String, dynamic>))
+          .toList();
+      _shippingRecords = shpsJson
+          .map((r) => ShippingRecord.fromApi(r as Map<String, dynamic>))
+          .toList();
 
-  /// 新規ユーザー向け：全品目×全場所（19×2=38件）を作成
-  Future<void> _initializeDefaultItems() async {
-    for (final loc in locations) {
-      for (final m in _masterItemBase) {
-        final item = StockItem(
-          id: _uuid.v4(),
-          category: m['category'] as String,
-          spec: m['spec'] as String,
-          unit: m['unit'] as String,
-          lowStockThreshold: m['threshold'] as double,
-          location: loc,
-        );
-        await _stockBox.put(item.id, item);
+      // 表示順マップを再構築（/api/stocks の並びをそのまま採用）
+      _itemOrderMap.clear();
+      int idx = 0;
+      for (final s in _stockItems) {
+        final key = '${s.category}|${s.spec}';
+        _itemOrderMap.putIfAbsent(key, () => idx++);
       }
-    }
-  }
-
-  /// 既存ボックス内に未登録のマスタ品目（カテゴリ＋規格＋場所）があれば追加。
-  /// 既存データは一切変更しない。
-  Future<void> _ensureMasterItems() async {
-    final existingKeys = _stockBox.values
-        .map((i) => '${i.category}|${i.spec}|${i.location}')
-        .toSet();
-    for (final loc in locations) {
-      for (final m in _masterItemBase) {
-        final key = '${m['category']}|${m['spec']}|$loc';
-        if (existingKeys.contains(key)) continue;
-        final item = StockItem(
-          id: _uuid.v4(),
-          category: m['category'] as String,
-          spec: m['spec'] as String,
-          unit: m['unit'] as String,
-          lowStockThreshold: m['threshold'] as double,
-          location: loc,
-        );
-        await _stockBox.put(item.id, item);
+    } catch (e) {
+      _lastError = e.toString();
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[StockProvider] refresh error: $e');
       }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -192,78 +104,32 @@ class StockProvider extends ChangeNotifier {
   // 初期在庫の更新
   // =====================================================================
 
+  /// 単一品目の初期在庫を更新（旧API互換 stockItemId は `<itemId>_<locId>`）
   Future<void> updateInitialStock(String stockItemId, double newInitialStock) async {
-    final item = _stockBox.get(stockItemId);
+    final item = getStockItem(stockItemId);
     if (item == null) return;
-    item.initialStock = newInitialStock;
-    await item.save();
-    _recalculateStock(stockItemId);
-    notifyListeners();
+    await ApiClient.postJson('/api/initial-stock', {
+      'item_id': item.itemId,
+      'location_id': item.locationId,
+      'initial_stock': newInitialStock,
+      'note': item.note,
+    });
+    await refreshAll();
   }
 
+  /// 複数品目の初期在庫を一括更新
   Future<void> updateAllInitialStocks(Map<String, double> updates) async {
     for (final entry in updates.entries) {
-      final item = _stockBox.get(entry.key);
+      final item = getStockItem(entry.key);
       if (item == null) continue;
-      item.initialStock = entry.value;
-      await item.save();
-      _recalculateStock(entry.key);
+      await ApiClient.postJson('/api/initial-stock', {
+        'item_id': item.itemId,
+        'location_id': item.locationId,
+        'initial_stock': entry.value,
+        'note': item.note,
+      });
     }
-    notifyListeners();
-  }
-
-  // =====================================================================
-  // 在庫再計算（保管場所別）
-  // =====================================================================
-
-  void _recalculateStock(String stockItemId) {
-    final item = _stockBox.get(stockItemId);
-    if (item == null) return;
-
-    // この品目（カテゴリ＋規格＋場所）に紐づく履歴のみを集計
-    final totalDelivery = _deliveryBox.values
-        .where((r) =>
-            r.category == item.category &&
-            r.spec == item.spec &&
-            r.location == item.location)
-        .fold<double>(0, (sum, r) => sum + r.quantity);
-
-    final totalShipping = _shippingBox.values
-        .where((r) =>
-            r.category == item.category &&
-            r.spec == item.spec &&
-            r.location == item.location)
-        .fold<double>(0, (sum, r) => sum + r.quantity);
-
-    item.currentStock = item.initialStock + totalDelivery - totalShipping;
-
-    final deliveryList = _deliveryBox.values
-        .where((r) =>
-            r.category == item.category &&
-            r.spec == item.spec &&
-            r.location == item.location)
-        .toList();
-    if (deliveryList.isNotEmpty) {
-      deliveryList.sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
-      item.lastDeliveryDate = deliveryList.first.deliveryDate;
-    } else {
-      item.lastDeliveryDate = null;
-    }
-
-    final shippingList = _shippingBox.values
-        .where((r) =>
-            r.category == item.category &&
-            r.spec == item.spec &&
-            r.location == item.location)
-        .toList();
-    if (shippingList.isNotEmpty) {
-      shippingList.sort((a, b) => b.shippingDate.compareTo(a.shippingDate));
-      item.lastShippingDate = shippingList.first.shippingDate;
-    } else {
-      item.lastShippingDate = null;
-    }
-
-    item.save();
+    await refreshAll();
   }
 
   // =====================================================================
@@ -278,32 +144,25 @@ class StockProvider extends ChangeNotifier {
     String? staff,
     String? note,
   }) async {
-    final item = _stockBox.get(stockItemId);
+    final item = getStockItem(stockItemId);
     if (item == null) return;
-
-    final record = DeliveryRecord(
-      id: _uuid.v4(),
-      stockItemId: stockItemId,
-      category: item.category,
-      spec: item.spec,
-      unit: item.unit,
-      deliveryDate: deliveryDate,
-      quantity: quantity,
-      supplier: supplier,
-      staff: staff,
-      note: note,
-      location: item.location,
-    );
-
-    await _deliveryBox.put(record.id, record);
-    _recalculateStock(stockItemId);
-    notifyListeners();
+    await ApiClient.postJson('/api/deliveries', {
+      'item_id': item.itemId,
+      'location_id': item.locationId,
+      'delivery_date': _formatDate(deliveryDate),
+      'quantity': quantity,
+      'supplier': supplier,
+      'staff': staff,
+      'note': note,
+    });
+    await refreshAll();
   }
 
   // =====================================================================
   // 出荷・使用登録
   // =====================================================================
 
+  /// 在庫不足の場合は false を返す。
   Future<bool> addShipping({
     required String stockItemId,
     required DateTime shippingDate,
@@ -312,30 +171,27 @@ class StockProvider extends ChangeNotifier {
     String? staff,
     String? note,
   }) async {
-    final item = _stockBox.get(stockItemId);
+    final item = getStockItem(stockItemId);
     if (item == null) return false;
-
-    if (quantity > item.currentStock) {
-      return false;
+    if (quantity > item.currentStock) return false;
+    try {
+      await ApiClient.postJson('/api/shipments', {
+        'item_id': item.itemId,
+        'location_id': item.locationId,
+        'shipping_date': _formatDate(shippingDate),
+        'quantity': quantity,
+        'destination': destination,
+        'staff': staff,
+        'note': note,
+      });
+    } on ApiException catch (e) {
+      if (e.status == 409) {
+        await refreshAll();
+        return false;
+      }
+      rethrow;
     }
-
-    final record = ShippingRecord(
-      id: _uuid.v4(),
-      stockItemId: stockItemId,
-      category: item.category,
-      spec: item.spec,
-      unit: item.unit,
-      shippingDate: shippingDate,
-      quantity: quantity,
-      destination: destination,
-      staff: staff,
-      note: note,
-      location: item.location,
-    );
-
-    await _shippingBox.put(record.id, record);
-    _recalculateStock(stockItemId);
-    notifyListeners();
+    await refreshAll();
     return true;
   }
 
@@ -344,61 +200,49 @@ class StockProvider extends ChangeNotifier {
   // =====================================================================
 
   Future<void> deleteDelivery(String recordId) async {
-    final record = _deliveryBox.get(recordId);
-    if (record == null) return;
-    // 該当の在庫項目を category+spec+location で探して再計算
-    final affected = _stockBox.values.firstWhere(
-      (i) =>
-          i.category == record.category &&
-          i.spec == record.spec &&
-          i.location == record.location,
-      orElse: () => _stockBox.values.first,
-    );
-    await _deliveryBox.delete(recordId);
-    _recalculateStock(affected.id);
-    notifyListeners();
+    await ApiClient.delete('/api/deliveries/$recordId');
+    await refreshAll();
   }
 
   Future<void> deleteShipping(String recordId) async {
-    final record = _shippingBox.get(recordId);
-    if (record == null) return;
-    final affected = _stockBox.values.firstWhere(
-      (i) =>
-          i.category == record.category &&
-          i.spec == record.spec &&
-          i.location == record.location,
-      orElse: () => _stockBox.values.first,
-    );
-    await _shippingBox.delete(recordId);
-    _recalculateStock(affected.id);
-    notifyListeners();
+    await ApiClient.delete('/api/shipments/$recordId');
+    await refreshAll();
   }
 
   // =====================================================================
   // 備考更新
   // =====================================================================
 
+  /// initial_stocks.note を更新する。
   Future<void> updateNote(String stockItemId, String? note) async {
-    final item = _stockBox.get(stockItemId);
+    final item = getStockItem(stockItemId);
     if (item == null) return;
-    item.note = note;
-    await item.save();
-    notifyListeners();
+    await ApiClient.postJson('/api/initial-stock', {
+      'item_id': item.itemId,
+      'location_id': item.locationId,
+      'initial_stock': item.initialStock,
+      'note': note,
+    });
+    await refreshAll();
   }
 
   // =====================================================================
-  // ゲッター・フィルター
+  // ゲッター・フィルター（旧API互換）
   // =====================================================================
 
-  StockItem? getStockItem(String id) => _stockBox.get(id);
+  StockItem? getStockItem(String id) {
+    for (final s in _stockItems) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
 
-  /// 指定カテゴリ・規格・場所の在庫項目を取得
   StockItem? findStockItem({
     required String category,
     required String spec,
     required String location,
   }) {
-    for (final i in _stockBox.values) {
+    for (final i in _stockItems) {
       if (i.category == category && i.spec == spec && i.location == location) {
         return i;
       }
@@ -406,46 +250,55 @@ class StockProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 定義順に並んだカテゴリ一覧（重複なし）
+  /// 定義順のカテゴリ一覧（重複なし）
   List<String> get categories {
     final seen = <String>{};
     final result = <String>[];
-    for (final m in _itemOrder) {
-      final cat = m['category']!;
-      if (seen.add(cat)) result.add(cat);
+    for (final s in _stockItems) {
+      if (seen.add(s.category)) result.add(s.category);
     }
     return result;
   }
 
-  /// 指定カテゴリの規格を定義順で返す
+  /// 指定カテゴリの規格一覧（表示順）
   List<String> getSpecsForCategory(String category) {
-    return _itemOrder
-        .where((m) => m['category'] == category)
-        .map((m) => m['spec']!)
-        .toList();
+    final seen = <String>{};
+    final result = <String>[];
+    for (final s in _stockItems) {
+      if (s.category != category) continue;
+      if (seen.add(s.spec)) result.add(s.spec);
+    }
+    return result;
   }
 
-  /// 「カテゴリ＋規格」単位のユニークな品目ペアリスト（定義順）
-  List<Map<String, String>> get itemPairs =>
-      List.unmodifiable(_itemOrder.map((m) => Map<String, String>.from(m)));
+  /// 「カテゴリ＋規格」ユニークなペア（表示順）
+  List<Map<String, String>> get itemPairs {
+    final seen = <String>{};
+    final result = <Map<String, String>>[];
+    for (final s in _stockItems) {
+      final key = '${s.category}|${s.spec}';
+      if (seen.add(key)) {
+        result.add({'category': s.category, 'spec': s.spec});
+      }
+    }
+    return result;
+  }
 
-  /// 指定場所の在庫項目のみを返す（定義順ソート済み）
+  /// 指定場所の在庫項目（表示順）
   List<StockItem> getStockItemsByLocation(String location) {
-    return stockItems.where((i) => i.location == location).toList();
+    return _stockItems.where((i) => i.location == location).toList();
   }
 
-  /// 在庫一覧の「品目別 × 場所別」サマリー
-  /// 各品目（category+spec）に対し、本社・第二・合計を返す
+  /// 在庫一覧サマリー（品目別 × 本社/第二/合計）
   List<StockSummary> get stockSummaries {
     final list = <StockSummary>[];
-    for (final pair in _itemOrder) {
+    for (final pair in itemPairs) {
       final cat = pair['category']!;
       final spec = pair['spec']!;
-      final honsha = findStockItem(
-          category: cat, spec: spec, location: locationHonsha);
-      final daini = findStockItem(
-          category: cat, spec: spec, location: locationDaini);
-      // unit は本社→第二の順で取得（どちらも同じ）
+      final honsha =
+          findStockItem(category: cat, spec: spec, location: locationHonsha);
+      final daini =
+          findStockItem(category: cat, spec: spec, location: locationDaini);
       final unit = honsha?.unit ?? daini?.unit ?? 'kg';
       final threshold =
           honsha?.lowStockThreshold ?? daini?.lowStockThreshold ?? 20;
@@ -467,7 +320,7 @@ class StockProvider extends ChangeNotifier {
     String? location,
     String? sortBy,
   }) {
-    var items = stockItems;
+    var items = _stockItems.toList();
     if (category != null && category.isNotEmpty) {
       items = items.where((i) => i.category == category).toList();
     }
@@ -492,7 +345,7 @@ class StockProvider extends ChangeNotifier {
     DateTime? fromDate,
     DateTime? toDate,
   }) {
-    var records = deliveryRecords;
+    var records = _deliveryRecords.toList();
     if (category != null && category.isNotEmpty) {
       records = records.where((r) => r.category == category).toList();
     }
@@ -503,7 +356,8 @@ class StockProvider extends ChangeNotifier {
       records = records.where((r) => r.location == location).toList();
     }
     if (fromDate != null) {
-      records = records.where((r) => !r.deliveryDate.isBefore(fromDate)).toList();
+      records =
+          records.where((r) => !r.deliveryDate.isBefore(fromDate)).toList();
     }
     if (toDate != null) {
       final end = toDate.add(const Duration(days: 1));
@@ -519,7 +373,7 @@ class StockProvider extends ChangeNotifier {
     DateTime? fromDate,
     DateTime? toDate,
   }) {
-    var records = shippingRecords;
+    var records = _shippingRecords.toList();
     if (category != null && category.isNotEmpty) {
       records = records.where((r) => r.category == category).toList();
     }
@@ -530,7 +384,8 @@ class StockProvider extends ChangeNotifier {
       records = records.where((r) => r.location == location).toList();
     }
     if (fromDate != null) {
-      records = records.where((r) => !r.shippingDate.isBefore(fromDate)).toList();
+      records =
+          records.where((r) => !r.shippingDate.isBefore(fromDate)).toList();
     }
     if (toDate != null) {
       final end = toDate.add(const Duration(days: 1));
@@ -539,11 +394,23 @@ class StockProvider extends ChangeNotifier {
     return records;
   }
 
+  /// 低在庫品目（UIでは未使用だが計算ロジック維持のため残す）
   List<StockItem> get lowStockItems =>
-      stockItems.where((i) => i.currentStock <= i.lowStockThreshold).toList();
+      _stockItems.where((i) => i.currentStock <= i.lowStockThreshold).toList();
+
+  // =====================================================================
+  // ヘルパー
+  // =====================================================================
+
+  String _formatDate(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$day';
+  }
 }
 
-/// 在庫一覧サマリー: 品目（category+spec）ごとに、本社/第二/合計を保持
+/// 在庫一覧サマリー（旧API互換）
 class StockSummary {
   final String category;
   final String spec;

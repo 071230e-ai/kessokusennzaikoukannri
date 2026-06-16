@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
-import 'models/stock_item.dart';
-import 'models/delivery_record.dart';
-import 'models/shipping_record.dart';
 import 'providers/stock_provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/dashboard_screen.dart';
@@ -17,26 +13,11 @@ import 'utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Hive.initFlutter();
-
-  Hive.registerAdapter(StockItemAdapter());
-  Hive.registerAdapter(DeliveryRecordAdapter());
-  Hive.registerAdapter(ShippingRecordAdapter());
-
-  await Hive.openBox<StockItem>(StockProvider.stockBoxName);
-  await Hive.openBox<DeliveryRecord>(StockProvider.deliveryBoxName);
-  await Hive.openBox<ShippingRecord>(StockProvider.shippingBoxName);
-
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => StockProvider()..initialize(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => AuthProvider()..initialize(),
-        ),
+        ChangeNotifierProvider(create: (_) => StockProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
       ],
       child: const WireStockApp(),
     ),
@@ -58,25 +39,119 @@ class WireStockApp extends StatelessWidget {
 }
 
 /// 認証状態に応じてログイン画面／メイン画面を切り替えるゲート。
-class _AuthGate extends StatelessWidget {
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  bool _stockInitialized = false;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
-        // SharedPreferences 読み込み中はスプラッシュ表示
         if (!auth.isInitialized) {
-          return const Scaffold(
-            backgroundColor: Color(0xFFF5F5F5),
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const _LoadingScreen(message: '起動中...');
         }
         if (!auth.isLoggedIn) {
+          _stockInitialized = false;
           return const LoginScreen();
         }
-        return const MainScaffold();
+        // ログイン直後に在庫データを取得
+        if (!_stockInitialized) {
+          _stockInitialized = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            context.read<StockProvider>().initialize();
+          });
+        }
+        return Consumer<StockProvider>(
+          builder: (context, stock, _) {
+            if (!stock.isInitialized && stock.isLoading) {
+              return const _LoadingScreen(message: 'データ取得中…');
+            }
+            if (!stock.isInitialized && stock.lastError != null) {
+              return _ErrorScreen(
+                message: 'サーバーに接続できませんでした',
+                detail: stock.lastError!,
+                onRetry: () => context.read<StockProvider>().initialize(),
+              );
+            }
+            return const MainScaffold();
+          },
+        );
       },
+    );
+  }
+}
+
+class _LoadingScreen extends StatelessWidget {
+  final String message;
+  const _LoadingScreen({required this.message});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(message,
+                style: const TextStyle(color: AppTheme.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorScreen extends StatelessWidget {
+  final String message;
+  final String detail;
+  final VoidCallback onRetry;
+  const _ErrorScreen({
+    required this.message,
+    required this.detail,
+    required this.onRetry,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('再試行'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -91,7 +166,6 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
-  // ナビゲーション定義（6タブ）
   static const List<_NavItem> _navItems = [
     _NavItem(icon: Icons.dashboard_outlined,      activeIcon: Icons.dashboard,      label: 'ダッシュボード'),
     _NavItem(icon: Icons.inventory_2_outlined,    activeIcon: Icons.inventory_2,    label: '在庫一覧'),
@@ -121,6 +195,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final isLoading = context.watch<StockProvider>().isLoading;
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -138,6 +213,23 @@ class _MainScaffoldState extends State<MainScaffold> {
           ],
         ),
         actions: [
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white,
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white70),
+              tooltip: '最新データに更新',
+              onPressed: () => context.read<StockProvider>().refreshAll(),
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline, color: Colors.white70),
             tooltip: 'アプリ情報',
@@ -222,7 +314,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             Text('結束線・タイワイヤ在庫管理アプリ'),
             SizedBox(height: 12),
-            Text('バージョン: 1.1.0',
+            Text('バージョン: 2.0.0（共有DB版）',
                 style: TextStyle(
                     fontSize: 12, color: AppTheme.textSecondary)),
             SizedBox(height: 8),
@@ -231,15 +323,19 @@ class _MainScaffoldState extends State<MainScaffold> {
                     TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             Text('・結束線（350mm〜700mm）',
                 style: TextStyle(fontSize: 12)),
+            Text('・メッキ結束線（350mm〜700mm）',
+                style: TextStyle(fontSize: 12)),
             Text('・18番結束線（550mm・700mm）',
                 style: TextStyle(fontSize: 12)),
             Text('・タイワイヤ', style: TextStyle(fontSize: 12)),
             SizedBox(height: 8),
-            Text('機能:',
-                style:
-                    TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            Text('・初期在庫設定（新機能）',
-                style: TextStyle(fontSize: 12, color: AppTheme.primaryGreen)),
+            Text('保管場所: 本社工場 / 第二工場',
+                style: TextStyle(fontSize: 12)),
+            SizedBox(height: 8),
+            Text('データ保存: Cloudflare D1（全端末共有）',
+                style: TextStyle(
+                    fontSize: 12, color: AppTheme.primaryGreen)),
+            SizedBox(height: 8),
             Text('・現在庫＝初期在庫＋納入−出荷・使用',
                 style: TextStyle(fontSize: 12)),
           ],
