@@ -5,12 +5,14 @@ import 'models/stock_item.dart';
 import 'models/delivery_record.dart';
 import 'models/shipping_record.dart';
 import 'providers/stock_provider.dart';
+import 'providers/auth_provider.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/stock_list_screen.dart';
 import 'screens/delivery_register_screen.dart';
 import 'screens/shipping_register_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/initial_stock_screen.dart';
+import 'screens/login_screen.dart';
 import 'utils/app_theme.dart';
 
 void main() async {
@@ -27,8 +29,15 @@ void main() async {
   await Hive.openBox<ShippingRecord>(StockProvider.shippingBoxName);
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => StockProvider()..initialize(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => StockProvider()..initialize(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider()..initialize(),
+        ),
+      ],
       child: const WireStockApp(),
     ),
   );
@@ -43,7 +52,31 @@ class WireStockApp extends StatelessWidget {
       title: '村田鉄筋㈱ 結束線・タイワイヤ在庫管理',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const MainScaffold(),
+      home: const _AuthGate(),
+    );
+  }
+}
+
+/// 認証状態に応じてログイン画面／メイン画面を切り替えるゲート。
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        // SharedPreferences 読み込み中はスプラッシュ表示
+        if (!auth.isInitialized) {
+          return const Scaffold(
+            backgroundColor: Color(0xFFF5F5F5),
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (!auth.isLoggedIn) {
+          return const LoginScreen();
+        }
+        return const MainScaffold();
+      },
     );
   }
 }
@@ -107,7 +140,13 @@ class _MainScaffoldState extends State<MainScaffold> {
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline, color: Colors.white70),
+            tooltip: 'アプリ情報',
             onPressed: () => _showAppInfo(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'ログアウト',
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -135,6 +174,39 @@ class _MainScaffoldState extends State<MainScaffold> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.logout, color: AppTheme.primaryGreen),
+            SizedBox(width: 8),
+            Text('ログアウト'),
+          ],
+        ),
+        content: const Text('ログアウトしますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(80, 40),
+              backgroundColor: AppTheme.primaryGreen,
+            ),
+            child: const Text('ログアウト'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await context.read<AuthProvider>().logout();
+    }
   }
 
   void _showAppInfo(BuildContext context) {
