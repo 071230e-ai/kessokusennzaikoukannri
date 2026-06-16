@@ -15,6 +15,7 @@ class ShippingRegisterScreen extends StatefulWidget {
 class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   DateTime _selectedDate = DateTime.now();
+  String? _selectedLocation;
   String? _selectedCategory;
   String? _selectedSpec;
   StockItem? _selectedItem;
@@ -31,6 +32,20 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
     _staffCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
+  }
+
+  void _resolveSelectedItem(StockProvider provider) {
+    if (_selectedLocation != null &&
+        _selectedCategory != null &&
+        _selectedSpec != null) {
+      _selectedItem = provider.findStockItem(
+        category: _selectedCategory!,
+        spec: _selectedSpec!,
+        location: _selectedLocation!,
+      );
+    } else {
+      _selectedItem = null;
+    }
   }
 
   @override
@@ -53,10 +68,8 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 説明カード
                       _buildInfoCard(),
                       const SizedBox(height: 16),
-
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -68,40 +81,51 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
                               _buildDatePicker(),
                               const SizedBox(height: 16),
 
+                              // 保管場所（出荷元）
+                              _buildLabel('保管場所（出荷元）*'),
+                              _buildLocationSelector(provider),
+                              const SizedBox(height: 16),
+
                               // 品目
                               _buildLabel('品目 *'),
                               DropdownButtonFormField<String>(
                                 initialValue: _selectedCategory,
-                                decoration: const InputDecoration(hintText: '品目を選択'),
-                                items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                                decoration: const InputDecoration(
+                                    hintText: '品目を選択'),
+                                items: categories
+                                    .map((c) => DropdownMenuItem(
+                                        value: c, child: Text(c)))
+                                    .toList(),
                                 onChanged: (v) => setState(() {
                                   _selectedCategory = v;
                                   _selectedSpec = null;
-                                  _selectedItem = null;
+                                  _resolveSelectedItem(provider);
                                 }),
-                                validator: (v) => v == null ? '品目を選択してください' : null,
+                                validator: (v) =>
+                                    v == null ? '品目を選択してください' : null,
                               ),
                               const SizedBox(height: 16),
 
-                              // 規格・長さ
                               _buildLabel('規格・長さ *'),
                               DropdownButtonFormField<String>(
                                 initialValue: _selectedSpec,
                                 decoration: const InputDecoration(
                                   hintText: '品目を先に選択してください',
                                 ),
-                                items: specs.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                                items: specs
+                                    .map((s) => DropdownMenuItem(
+                                        value: s, child: Text(s)))
+                                    .toList(),
                                 onChanged: _selectedCategory == null
                                     ? null
                                     : (v) {
-                                        setState(() => _selectedSpec = v);
-                                        if (v != null && _selectedCategory != null) {
-                                          _selectedItem = provider.stockItems.firstWhere(
-                                            (i) => i.category == _selectedCategory && i.spec == v,
-                                          );
-                                        }
+                                        setState(() {
+                                          _selectedSpec = v;
+                                          _resolveSelectedItem(provider);
+                                        });
                                       },
-                                validator: (v) => v == null ? '規格・長さを選択してください' : null,
+                                validator: (v) =>
+                                    v == null ? '規格・長さを選択してください' : null,
                               ),
 
                               if (_selectedItem != null) ...[
@@ -111,45 +135,48 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
 
                               const SizedBox(height: 16),
 
-                              // 数量
                               _buildLabel('数量 *'),
                               TextFormField(
                                 controller: _quantityCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
                                 decoration: InputDecoration(
                                   hintText: '0',
                                   suffixText: _selectedItem?.unit ?? '',
                                 ),
                                 validator: (v) {
-                                  if (v == null || v.isEmpty) return '数量を入力してください';
+                                  if (v == null || v.isEmpty) {
+                                    return '数量を入力してください';
+                                  }
                                   final n = double.tryParse(v);
                                   if (n == null) return '数値を入力してください';
                                   if (n < 0) return '0以上の値を入力してください';
-                                  if (_selectedItem != null && n > _selectedItem!.currentStock) {
-                                    return '在庫数を超えています（現在庫: ${DateFormatter.formatQuantity(_selectedItem!.currentStock, _selectedItem!.unit)}）';
+                                  if (_selectedItem != null &&
+                                      n > _selectedItem!.currentStock) {
+                                    return '在庫数を超えています（${_selectedItem!.location} 現在庫: ${DateFormatter.formatQuantity(_selectedItem!.currentStock, _selectedItem!.unit)}）';
                                   }
                                   return null;
                                 },
                               ),
                               const SizedBox(height: 16),
 
-                              // 出荷先・使用場所
                               _buildLabel('出荷先・使用場所'),
                               TextFormField(
                                 controller: _destinationCtrl,
-                                decoration: const InputDecoration(hintText: '出荷先や使用場所を入力'),
+                                decoration: const InputDecoration(
+                                    hintText: '出荷先や使用場所を入力'),
                               ),
                               const SizedBox(height: 16),
 
-                              // 担当者
                               _buildLabel('担当者'),
                               TextFormField(
                                 controller: _staffCtrl,
-                                decoration: const InputDecoration(hintText: '担当者名を入力'),
+                                decoration: const InputDecoration(
+                                    hintText: '担当者名を入力'),
                               ),
                               const SizedBox(height: 16),
 
-                              // 備考
                               _buildLabel('備考'),
                               TextFormField(
                                 controller: _noteCtrl,
@@ -166,11 +193,16 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
 
                       const SizedBox(height: 20),
 
-                      // 登録ボタン
                       ElevatedButton.icon(
-                        onPressed: _isSubmitting ? null : () => _submit(provider),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _submit(provider),
                         icon: _isSubmitting
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.output_rounded),
                         label: const Text('出荷・使用を登録する'),
                         style: ElevatedButton.styleFrom(
@@ -217,7 +249,7 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              '出荷・使用情報を入力してください。登録後、自動で在庫数から減算されます。',
+              '出荷・使用情報を入力してください。保管場所別に在庫から減算されます。',
               style: TextStyle(fontSize: 13, color: Colors.orange),
             ),
           ),
@@ -231,7 +263,89 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textPrimary),
+      ),
+    );
+  }
+
+  Widget _buildLocationSelector(StockProvider provider) {
+    return FormField<String>(
+      initialValue: _selectedLocation,
+      validator: (v) => (v == null || v.isEmpty) ? '保管場所を選択してください' : null,
+      builder: (field) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: StockProvider.locations.map((loc) {
+              final selected = _selectedLocation == loc;
+              final iconData = loc == StockProvider.locationHonsha
+                  ? Icons.factory_outlined
+                  : Icons.warehouse_outlined;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedLocation = loc;
+                        _resolveSelectedItem(provider);
+                      });
+                      field.didChange(loc);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.orange.shade700
+                            : Colors.white,
+                        border: Border.all(
+                          color: selected
+                              ? Colors.orange.shade700
+                              : AppTheme.borderColor,
+                          width: selected ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(iconData,
+                              size: 18,
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.orange.shade700),
+                          const SizedBox(width: 6),
+                          Text(
+                            loc,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: selected
+                                  ? Colors.white
+                                  : AppTheme.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          if (field.hasError)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 12),
+              child: Text(field.errorText!,
+                  style: const TextStyle(
+                      color: AppTheme.warningRed, fontSize: 12)),
+            ),
+        ],
       ),
     );
   }
@@ -256,14 +370,16 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_today, size: 18, color: Colors.orange),
+            const Icon(Icons.calendar_today,
+                size: 18, color: Colors.orange),
             const SizedBox(width: 10),
             Text(
               DateFormatter.format(_selectedDate),
               style: const TextStyle(fontSize: 16),
             ),
             const Spacer(),
-            const Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary),
+            const Icon(Icons.arrow_drop_down,
+                color: AppTheme.textSecondary),
           ],
         ),
       ),
@@ -271,34 +387,28 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
   }
 
   Widget _buildCurrentStockBadge(StockItem item) {
-    final isLow = item.currentStock <= item.lowStockThreshold;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isLow ? AppTheme.warningRedLight : AppTheme.backgroundGreen,
+        color: AppTheme.backgroundGreen,
         borderRadius: BorderRadius.circular(6),
-        border: isLow ? Border.all(color: AppTheme.warningRed) : null,
       ),
       child: Row(
         children: [
-          Icon(
+          const Icon(
             Icons.inventory_2_outlined,
             size: 16,
-            color: isLow ? AppTheme.warningRed : AppTheme.primaryGreen,
+            color: AppTheme.primaryGreen,
           ),
           const SizedBox(width: 6),
           Text(
-            '現在庫: ${DateFormatter.formatQuantity(item.currentStock, item.unit)}',
-            style: TextStyle(
+            '${item.location} の現在庫: ${DateFormatter.formatQuantity(item.currentStock, item.unit)}',
+            style: const TextStyle(
               fontSize: 13,
-              color: isLow ? AppTheme.warningRed : AppTheme.primaryGreen,
+              color: AppTheme.primaryGreen,
               fontWeight: FontWeight.bold,
             ),
           ),
-          if (isLow) ...[
-            const SizedBox(width: 8),
-            const Text('⚠️ 在庫少', style: TextStyle(fontSize: 12, color: AppTheme.warningRed)),
-          ],
         ],
       ),
     );
@@ -317,7 +427,8 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
       stockItemId: _selectedItem!.id,
       shippingDate: _selectedDate,
       quantity: qty,
-      destination: _destinationCtrl.text.isEmpty ? null : _destinationCtrl.text,
+      destination:
+          _destinationCtrl.text.isEmpty ? null : _destinationCtrl.text,
       staff: _staffCtrl.text.isEmpty ? null : _staffCtrl.text,
       note: _noteCtrl.text.isEmpty ? null : _noteCtrl.text,
     );
@@ -328,7 +439,8 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${_selectedItem!.displayName} を ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)} 出荷・使用登録しました'),
+            content: Text(
+                '${_selectedItem!.location} ${_selectedItem!.displayName} を ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)} 出荷・使用登録しました'),
             backgroundColor: Colors.orange.shade700,
             duration: const Duration(seconds: 3),
           ),
@@ -342,11 +454,12 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
               children: [
                 Icon(Icons.warning, color: AppTheme.warningRed),
                 SizedBox(width: 8),
-                Text('在庫不足', style: TextStyle(color: AppTheme.warningRed)),
+                Text('在庫不足',
+                    style: TextStyle(color: AppTheme.warningRed)),
               ],
             ),
             content: Text(
-              '在庫数を超えています。\n現在庫: ${DateFormatter.formatQuantity(_selectedItem!.currentStock, _selectedItem!.unit)}\n入力数量: ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)}',
+              '在庫数を超えています。\n${_selectedItem!.location} 現在庫: ${DateFormatter.formatQuantity(_selectedItem!.currentStock, _selectedItem!.unit)}\n入力数量: ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)}',
             ),
             actions: [
               ElevatedButton(
@@ -367,6 +480,7 @@ class _ShippingRegisterScreenState extends State<ShippingRegisterScreen> {
   void _resetForm() {
     setState(() {
       _selectedDate = DateTime.now();
+      _selectedLocation = null;
       _selectedCategory = null;
       _selectedSpec = null;
       _selectedItem = null;

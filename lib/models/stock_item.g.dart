@@ -27,13 +27,15 @@ class StockItemAdapter extends TypeAdapter<StockItem> {
       note: fields[7] as String?,
       lastDeliveryDate: fields[8] as DateTime?,
       lastShippingDate: fields[9] as DateTime?,
+      // 旧データで location 未設定の場合は '本社工場' として扱う
+      location: (fields[10] as String?) ?? '本社工場',
     );
   }
 
   @override
   void write(BinaryWriter writer, StockItem obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +55,9 @@ class StockItemAdapter extends TypeAdapter<StockItem> {
       ..writeByte(8)
       ..write(obj.lastDeliveryDate)
       ..writeByte(9)
-      ..write(obj.lastShippingDate);
+      ..write(obj.lastShippingDate)
+      ..writeByte(10)
+      ..write(obj.location);
   }
 
   @override

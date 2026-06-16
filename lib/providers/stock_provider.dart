@@ -10,6 +10,11 @@ class StockProvider extends ChangeNotifier {
   static const String deliveryBoxName = 'delivery_records';
   static const String shippingBoxName = 'shipping_records';
 
+  // ---- 保管場所定数 ----
+  static const String locationHonsha = '本社工場';
+  static const String locationDaini = '第二工場';
+  static const List<String> locations = [locationHonsha, locationDaini];
+
   late Box<StockItem> _stockBox;
   late Box<DeliveryRecord> _deliveryBox;
   late Box<ShippingRecord> _shippingBox;
@@ -26,26 +31,46 @@ class StockProvider extends ChangeNotifier {
     {'category': '結束線', 'spec': '600mm'},
     {'category': '結束線', 'spec': '650mm'},
     {'category': '結束線', 'spec': '700mm'},
+    {'category': 'メッキ結束線', 'spec': '350mm'},
+    {'category': 'メッキ結束線', 'spec': '400mm'},
+    {'category': 'メッキ結束線', 'spec': '450mm'},
+    {'category': 'メッキ結束線', 'spec': '500mm'},
+    {'category': 'メッキ結束線', 'spec': '550mm'},
+    {'category': 'メッキ結束線', 'spec': '600mm'},
+    {'category': 'メッキ結束線', 'spec': '650mm'},
+    {'category': 'メッキ結束線', 'spec': '700mm'},
     {'category': '18番結束線', 'spec': '550mm'},
     {'category': '18番結束線', 'spec': '700mm'},
     {'category': 'タイワイヤ', 'spec': '-'},
   ];
 
-  /// 品目の定義順インデックスを返す（並び替えに使用）
-  int _itemSortIndex(StockItem item) {
+  /// 品目の定義順インデックスを返す
+  int _itemSortIndex(String category, String spec) {
     for (int i = 0; i < _itemOrder.length; i++) {
-      if (_itemOrder[i]['category'] == item.category &&
-          _itemOrder[i]['spec'] == item.spec) {
+      if (_itemOrder[i]['category'] == category &&
+          _itemOrder[i]['spec'] == spec) {
         return i;
       }
     }
-    return _itemOrder.length; // 未定義品目は末尾
+    return _itemOrder.length;
   }
 
-  /// 定義順にソートされた全在庫リスト
+  /// 場所の並び順インデックス（本社→第二）
+  int _locationSortIndex(String location) {
+    final i = locations.indexOf(location);
+    return i < 0 ? locations.length : i;
+  }
+
+  /// 定義順（品目→場所）にソートされた全在庫リスト
   List<StockItem> get stockItems {
     final list = _stockBox.values.toList();
-    list.sort((a, b) => _itemSortIndex(a).compareTo(_itemSortIndex(b)));
+    list.sort((a, b) {
+      final c = _itemSortIndex(a.category, a.spec)
+          .compareTo(_itemSortIndex(b.category, b.spec));
+      if (c != 0) return c;
+      return _locationSortIndex(a.location)
+          .compareTo(_locationSortIndex(b.location));
+    });
     return list;
   }
 
@@ -64,25 +89,102 @@ class StockProvider extends ChangeNotifier {
 
     if (_stockBox.isEmpty) {
       await _initializeDefaultItems();
+    } else {
+      // 既存ユーザー向け：定義に存在しない品目・場所だけを追加
+      await _ensureMasterItems();
+    }
+
+    // 既存データの単位マイグレーション（タイワイヤ：箱 → 個）
+    // 数量は変更せず、表示単位のみ更新する。
+    await _migrateTaiwireUnit();
+  }
+
+  /// タイワイヤの単位を「箱」から「個」へ更新するマイグレーション。
+  /// 既存の数量・履歴は変更しない。すでに「個」のレコードはスキップ。
+  Future<void> _migrateTaiwireUnit() async {
+    // 在庫品目
+    for (final item in _stockBox.values) {
+      if (item.category == 'タイワイヤ' && item.unit == '箱') {
+        item.unit = '個';
+        await item.save();
+      }
+    }
+    // 納入履歴
+    for (final rec in _deliveryBox.values) {
+      if (rec.category == 'タイワイヤ' && rec.unit == '箱') {
+        rec.unit = '個';
+        await rec.save();
+      }
+    }
+    // 出荷・使用履歴
+    for (final rec in _shippingBox.values) {
+      if (rec.category == 'タイワイヤ' && rec.unit == '箱') {
+        rec.unit = '個';
+        await rec.save();
+      }
     }
   }
 
+  /// 全マスタ品目（カテゴリ・規格・単位・既定下限）の定義
+  static const List<Map<String, dynamic>> _masterItemBase = [
+    {'category': '結束線',      'spec': '350mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '400mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '450mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '500mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '600mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '650mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '結束線',      'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '350mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '400mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '450mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '500mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '600mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '650mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'メッキ結束線', 'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '18番結束線',  'spec': '550mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': '18番結束線',  'spec': '700mm', 'unit': 'kg', 'threshold': 20.0},
+    {'category': 'タイワイヤ',   'spec': '-',     'unit': '個', 'threshold': 5.0},
+  ];
+
+  /// 新規ユーザー向け：全品目×全場所（19×2=38件）を作成
   Future<void> _initializeDefaultItems() async {
-    final defaultItems = [
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '350mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '400mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '450mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '500mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '550mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '600mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '650mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '結束線',    spec: '700mm', unit: 'kg',  lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '18番結束線', spec: '550mm', unit: 'kg', lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: '18番結束線', spec: '700mm', unit: 'kg', lowStockThreshold: 20),
-      StockItem(id: _uuid.v4(), category: 'タイワイヤ',  spec: '-',    unit: '箱', lowStockThreshold: 5),
-    ];
-    for (final item in defaultItems) {
-      await _stockBox.put(item.id, item);
+    for (final loc in locations) {
+      for (final m in _masterItemBase) {
+        final item = StockItem(
+          id: _uuid.v4(),
+          category: m['category'] as String,
+          spec: m['spec'] as String,
+          unit: m['unit'] as String,
+          lowStockThreshold: m['threshold'] as double,
+          location: loc,
+        );
+        await _stockBox.put(item.id, item);
+      }
+    }
+  }
+
+  /// 既存ボックス内に未登録のマスタ品目（カテゴリ＋規格＋場所）があれば追加。
+  /// 既存データは一切変更しない。
+  Future<void> _ensureMasterItems() async {
+    final existingKeys = _stockBox.values
+        .map((i) => '${i.category}|${i.spec}|${i.location}')
+        .toSet();
+    for (final loc in locations) {
+      for (final m in _masterItemBase) {
+        final key = '${m['category']}|${m['spec']}|$loc';
+        if (existingKeys.contains(key)) continue;
+        final item = StockItem(
+          id: _uuid.v4(),
+          category: m['category'] as String,
+          spec: m['spec'] as String,
+          unit: m['unit'] as String,
+          lowStockThreshold: m['threshold'] as double,
+          location: loc,
+        );
+        await _stockBox.put(item.id, item);
+      }
     }
   }
 
@@ -90,7 +192,6 @@ class StockProvider extends ChangeNotifier {
   // 初期在庫の更新
   // =====================================================================
 
-  /// 1件の初期在庫を更新し現在庫を再計算する
   Future<void> updateInitialStock(String stockItemId, double newInitialStock) async {
     final item = _stockBox.get(stockItemId);
     if (item == null) return;
@@ -100,7 +201,6 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 全品目の初期在庫を一括更新する
   Future<void> updateAllInitialStocks(Map<String, double> updates) async {
     for (final entry in updates.entries) {
       final item = _stockBox.get(entry.key);
@@ -113,27 +213,35 @@ class StockProvider extends ChangeNotifier {
   }
 
   // =====================================================================
-  // 在庫再計算
+  // 在庫再計算（保管場所別）
   // =====================================================================
 
   void _recalculateStock(String stockItemId) {
     final item = _stockBox.get(stockItemId);
     if (item == null) return;
 
+    // この品目（カテゴリ＋規格＋場所）に紐づく履歴のみを集計
     final totalDelivery = _deliveryBox.values
-        .where((r) => r.stockItemId == stockItemId)
+        .where((r) =>
+            r.category == item.category &&
+            r.spec == item.spec &&
+            r.location == item.location)
         .fold<double>(0, (sum, r) => sum + r.quantity);
 
     final totalShipping = _shippingBox.values
-        .where((r) => r.stockItemId == stockItemId)
+        .where((r) =>
+            r.category == item.category &&
+            r.spec == item.spec &&
+            r.location == item.location)
         .fold<double>(0, (sum, r) => sum + r.quantity);
 
-    // 現在庫 = 初期在庫 + 納入合計 - 出荷・使用合計
     item.currentStock = item.initialStock + totalDelivery - totalShipping;
 
-    // 最終納入日
     final deliveryList = _deliveryBox.values
-        .where((r) => r.stockItemId == stockItemId)
+        .where((r) =>
+            r.category == item.category &&
+            r.spec == item.spec &&
+            r.location == item.location)
         .toList();
     if (deliveryList.isNotEmpty) {
       deliveryList.sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
@@ -142,9 +250,11 @@ class StockProvider extends ChangeNotifier {
       item.lastDeliveryDate = null;
     }
 
-    // 最終出荷日
     final shippingList = _shippingBox.values
-        .where((r) => r.stockItemId == stockItemId)
+        .where((r) =>
+            r.category == item.category &&
+            r.spec == item.spec &&
+            r.location == item.location)
         .toList();
     if (shippingList.isNotEmpty) {
       shippingList.sort((a, b) => b.shippingDate.compareTo(a.shippingDate));
@@ -182,6 +292,7 @@ class StockProvider extends ChangeNotifier {
       supplier: supplier,
       staff: staff,
       note: note,
+      location: item.location,
     );
 
     await _deliveryBox.put(record.id, record);
@@ -205,7 +316,7 @@ class StockProvider extends ChangeNotifier {
     if (item == null) return false;
 
     if (quantity > item.currentStock) {
-      return false; // 在庫不足
+      return false;
     }
 
     final record = ShippingRecord(
@@ -219,6 +330,7 @@ class StockProvider extends ChangeNotifier {
       destination: destination,
       staff: staff,
       note: note,
+      location: item.location,
     );
 
     await _shippingBox.put(record.id, record);
@@ -234,18 +346,31 @@ class StockProvider extends ChangeNotifier {
   Future<void> deleteDelivery(String recordId) async {
     final record = _deliveryBox.get(recordId);
     if (record == null) return;
-    final stockItemId = record.stockItemId;
+    // 該当の在庫項目を category+spec+location で探して再計算
+    final affected = _stockBox.values.firstWhere(
+      (i) =>
+          i.category == record.category &&
+          i.spec == record.spec &&
+          i.location == record.location,
+      orElse: () => _stockBox.values.first,
+    );
     await _deliveryBox.delete(recordId);
-    _recalculateStock(stockItemId);
+    _recalculateStock(affected.id);
     notifyListeners();
   }
 
   Future<void> deleteShipping(String recordId) async {
     final record = _shippingBox.get(recordId);
     if (record == null) return;
-    final stockItemId = record.stockItemId;
+    final affected = _stockBox.values.firstWhere(
+      (i) =>
+          i.category == record.category &&
+          i.spec == record.spec &&
+          i.location == record.location,
+      orElse: () => _stockBox.values.first,
+    );
     await _shippingBox.delete(recordId);
-    _recalculateStock(stockItemId);
+    _recalculateStock(affected.id);
     notifyListeners();
   }
 
@@ -267,6 +392,20 @@ class StockProvider extends ChangeNotifier {
 
   StockItem? getStockItem(String id) => _stockBox.get(id);
 
+  /// 指定カテゴリ・規格・場所の在庫項目を取得
+  StockItem? findStockItem({
+    required String category,
+    required String spec,
+    required String location,
+  }) {
+    for (final i in _stockBox.values) {
+      if (i.category == category && i.spec == spec && i.location == location) {
+        return i;
+      }
+    }
+    return null;
+  }
+
   /// 定義順に並んだカテゴリ一覧（重複なし）
   List<String> get categories {
     final seen = <String>{};
@@ -286,17 +425,57 @@ class StockProvider extends ChangeNotifier {
         .toList();
   }
 
+  /// 「カテゴリ＋規格」単位のユニークな品目ペアリスト（定義順）
+  List<Map<String, String>> get itemPairs =>
+      List.unmodifiable(_itemOrder.map((m) => Map<String, String>.from(m)));
+
+  /// 指定場所の在庫項目のみを返す（定義順ソート済み）
+  List<StockItem> getStockItemsByLocation(String location) {
+    return stockItems.where((i) => i.location == location).toList();
+  }
+
+  /// 在庫一覧の「品目別 × 場所別」サマリー
+  /// 各品目（category+spec）に対し、本社・第二・合計を返す
+  List<StockSummary> get stockSummaries {
+    final list = <StockSummary>[];
+    for (final pair in _itemOrder) {
+      final cat = pair['category']!;
+      final spec = pair['spec']!;
+      final honsha = findStockItem(
+          category: cat, spec: spec, location: locationHonsha);
+      final daini = findStockItem(
+          category: cat, spec: spec, location: locationDaini);
+      // unit は本社→第二の順で取得（どちらも同じ）
+      final unit = honsha?.unit ?? daini?.unit ?? 'kg';
+      final threshold =
+          honsha?.lowStockThreshold ?? daini?.lowStockThreshold ?? 20;
+      list.add(StockSummary(
+        category: cat,
+        spec: spec,
+        unit: unit,
+        lowStockThreshold: threshold,
+        honshaItem: honsha,
+        dainiItem: daini,
+      ));
+    }
+    return list;
+  }
+
   List<StockItem> getFilteredStockItems({
     String? category,
     String? spec,
-    String? sortBy, // 'stock_asc', 'stock_desc'
+    String? location,
+    String? sortBy,
   }) {
-    var items = stockItems; // すでに定義順でソート済み
+    var items = stockItems;
     if (category != null && category.isNotEmpty) {
       items = items.where((i) => i.category == category).toList();
     }
     if (spec != null && spec.isNotEmpty) {
       items = items.where((i) => i.spec == spec).toList();
+    }
+    if (location != null && location.isNotEmpty) {
+      items = items.where((i) => i.location == location).toList();
     }
     if (sortBy == 'stock_asc') {
       items.sort((a, b) => a.currentStock.compareTo(b.currentStock));
@@ -309,6 +488,7 @@ class StockProvider extends ChangeNotifier {
   List<DeliveryRecord> getFilteredDeliveries({
     String? category,
     String? spec,
+    String? location,
     DateTime? fromDate,
     DateTime? toDate,
   }) {
@@ -318,6 +498,9 @@ class StockProvider extends ChangeNotifier {
     }
     if (spec != null && spec.isNotEmpty) {
       records = records.where((r) => r.spec == spec).toList();
+    }
+    if (location != null && location.isNotEmpty) {
+      records = records.where((r) => r.location == location).toList();
     }
     if (fromDate != null) {
       records = records.where((r) => !r.deliveryDate.isBefore(fromDate)).toList();
@@ -332,6 +515,7 @@ class StockProvider extends ChangeNotifier {
   List<ShippingRecord> getFilteredShippings({
     String? category,
     String? spec,
+    String? location,
     DateTime? fromDate,
     DateTime? toDate,
   }) {
@@ -341,6 +525,9 @@ class StockProvider extends ChangeNotifier {
     }
     if (spec != null && spec.isNotEmpty) {
       records = records.where((r) => r.spec == spec).toList();
+    }
+    if (location != null && location.isNotEmpty) {
+      records = records.where((r) => r.location == location).toList();
     }
     if (fromDate != null) {
       records = records.where((r) => !r.shippingDate.isBefore(fromDate)).toList();
@@ -354,4 +541,37 @@ class StockProvider extends ChangeNotifier {
 
   List<StockItem> get lowStockItems =>
       stockItems.where((i) => i.currentStock <= i.lowStockThreshold).toList();
+}
+
+/// 在庫一覧サマリー: 品目（category+spec）ごとに、本社/第二/合計を保持
+class StockSummary {
+  final String category;
+  final String spec;
+  final String unit;
+  final double lowStockThreshold;
+  final StockItem? honshaItem;
+  final StockItem? dainiItem;
+
+  StockSummary({
+    required this.category,
+    required this.spec,
+    required this.unit,
+    required this.lowStockThreshold,
+    required this.honshaItem,
+    required this.dainiItem,
+  });
+
+  double get honshaStock => honshaItem?.currentStock ?? 0;
+  double get dainiStock => dainiItem?.currentStock ?? 0;
+  double get totalStock => honshaStock + dainiStock;
+
+  double get honshaInitial => honshaItem?.initialStock ?? 0;
+  double get dainiInitial => dainiItem?.initialStock ?? 0;
+  double get totalInitial => honshaInitial + dainiInitial;
+
+  bool get isLow =>
+      (honshaItem != null && honshaItem!.currentStock <= lowStockThreshold) ||
+      (dainiItem != null && dainiItem!.currentStock <= lowStockThreshold);
+
+  String get displayName => spec == '-' ? category : '$category $spec';
 }

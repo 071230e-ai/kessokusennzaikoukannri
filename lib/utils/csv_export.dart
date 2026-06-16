@@ -10,10 +10,10 @@ class CsvExport {
 
   static String generateStockCsv(List<StockItem> items) {
     final buf = StringBuffer();
-    buf.writeln('品目,規格,単位,初期在庫,現在庫,最終納入日,最終出荷日,備考');
+    buf.writeln('保管場所,品目,規格,単位,初期在庫,現在庫,最終納入日,最終出荷日,備考');
     for (final item in items) {
       buf.writeln(
-        '"${item.category}","${item.spec}","${item.unit}",'
+        '"${item.location}","${item.category}","${item.spec}","${item.unit}",'
         '"${_q(item.initialStock)}","${_q(item.currentStock)}",'
         '"${_fmtDate(item.lastDeliveryDate)}",'
         '"${_fmtDate(item.lastShippingDate)}","${item.note ?? ''}"',
@@ -24,10 +24,10 @@ class CsvExport {
 
   static String generateDeliveryCsv(List<DeliveryRecord> records) {
     final buf = StringBuffer();
-    buf.writeln('納入日,品目,規格,数量,単位,仕入先,担当者,備考');
+    buf.writeln('納入日,保管場所,品目,規格,数量,単位,仕入先,担当者,備考');
     for (final r in records) {
       buf.writeln(
-        '"${_fmt.format(r.deliveryDate)}","${r.category}","${r.spec}",'
+        '"${_fmt.format(r.deliveryDate)}","${r.location}","${r.category}","${r.spec}",'
         '"${_q(r.quantity)}","${r.unit}","${r.supplier ?? ''}","${r.staff ?? ''}","${r.note ?? ''}"',
       );
     }
@@ -36,10 +36,10 @@ class CsvExport {
 
   static String generateShippingCsv(List<ShippingRecord> records) {
     final buf = StringBuffer();
-    buf.writeln('出荷・使用日,品目,規格,数量,単位,出荷先・使用場所,担当者,備考');
+    buf.writeln('出荷・使用日,保管場所,品目,規格,数量,単位,出荷先・使用場所,担当者,備考');
     for (final r in records) {
       buf.writeln(
-        '"${_fmt.format(r.shippingDate)}","${r.category}","${r.spec}",'
+        '"${_fmt.format(r.shippingDate)}","${r.location}","${r.category}","${r.spec}",'
         '"${_q(r.quantity)}","${r.unit}","${r.destination ?? ''}","${r.staff ?? ''}","${r.note ?? ''}"',
       );
     }

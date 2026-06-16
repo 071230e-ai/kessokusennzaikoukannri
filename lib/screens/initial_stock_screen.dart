@@ -12,18 +12,30 @@ class InitialStockScreen extends StatefulWidget {
   State<InitialStockScreen> createState() => _InitialStockScreenState();
 }
 
-class _InitialStockScreenState extends State<InitialStockScreen> {
+class _InitialStockScreenState extends State<InitialStockScreen>
+    with SingleTickerProviderStateMixin {
   // 各品目IDに対応するTextEditingController
   final Map<String, TextEditingController> _controllers = {};
   bool _isSaving = false;
   // ignore: unused_field
   bool _hasChanges = false;
 
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController =
+        TabController(length: StockProvider.locations.length, vsync: this);
+    _tabController.addListener(() => setState(() {}));
+  }
+
   @override
   void dispose() {
     for (final c in _controllers.values) {
       c.dispose();
     }
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -46,8 +58,10 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
   Widget build(BuildContext context) {
     return Consumer<StockProvider>(
       builder: (context, provider, _) {
-        final items = provider.stockItems;
-        _initControllers(items);
+        _initControllers(provider.stockItems);
+        final currentLocation =
+            StockProvider.locations[_tabController.index];
+        final items = provider.getStockItemsByLocation(currentLocation);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF5F5F5),
@@ -55,6 +69,9 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
             children: [
               // 説明バナー
               _buildInfoBanner(),
+
+              // 保管場所タブ
+              _buildLocationTabs(),
 
               // テーブルヘッダー
               _buildTableHeader(),
@@ -70,8 +87,8 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
                 ),
               ),
 
-              // 保存ボタンエリア
-              _buildSaveArea(provider, items),
+              // 保存ボタンエリア（全タブ共通＝全工場まとめて保存）
+              _buildSaveArea(provider, provider.stockItems),
             ],
           ),
         );
@@ -89,11 +106,15 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
         children: [
           Row(
             children: const [
-              Icon(Icons.inventory_outlined, color: AppTheme.primaryGreen, size: 20),
+              Icon(Icons.inventory_outlined,
+                  color: AppTheme.primaryGreen, size: 20),
               SizedBox(width: 8),
               Text(
                 '初期在庫設定',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen),
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen),
               ),
             ],
           ),
@@ -105,13 +126,43 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
               borderRadius: BorderRadius.circular(6),
             ),
             child: const Text(
-              '現在の実際の在庫数を入力してください。\n'
-              '現在庫 ＝ 初期在庫 ＋ 納入合計 − 出荷・使用合計\n'
+              '保管場所ごとに、現在の実際の在庫数を入力してください。\n'
+              '現在庫 ＝ 初期在庫 ＋ 納入合計 − 出荷・使用合計（場所別に計算）\n'
               '空欄は 0 として扱われます。',
-              style: TextStyle(fontSize: 12, color: AppTheme.primaryGreen, height: 1.6),
+              style: TextStyle(
+                  fontSize: 12, color: AppTheme.primaryGreen, height: 1.6),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLocationTabs() {
+    return Container(
+      color: Colors.white,
+      child: TabBar(
+        controller: _tabController,
+        tabs: StockProvider.locations.map((loc) {
+          final iconData = loc == StockProvider.locationHonsha
+              ? Icons.factory_outlined
+              : Icons.warehouse_outlined;
+          return Tab(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(iconData, size: 18),
+                const SizedBox(width: 6),
+                Text(loc),
+              ],
+            ),
+          );
+        }).toList(),
+        labelColor: AppTheme.primaryGreen,
+        unselectedLabelColor: AppTheme.textSecondary,
+        indicatorColor: AppTheme.primaryGreen,
+        labelStyle:
+            const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -124,19 +175,36 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
         children: const [
           Expanded(
             flex: 3,
-            child: Text('品目', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
+            child: Text('品目',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen)),
           ),
           Expanded(
             flex: 2,
-            child: Text('規格', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
+            child: Text('規格',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen)),
           ),
           SizedBox(
             width: 40,
-            child: Text('単位', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
+            child: Text('単位',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen)),
           ),
           Expanded(
             flex: 3,
-            child: Text('初期在庫', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen)),
+            child: Text('初期在庫',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen)),
           ),
         ],
       ),
@@ -175,7 +243,8 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
               flex: 2,
               child: Text(
                 item.spec,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textSecondary),
               ),
             ),
             // 単位
@@ -183,7 +252,8 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
               width: 40,
               child: Text(
                 item.unit,
-                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.textSecondary),
               ),
             ),
             // 初期在庫入力欄
@@ -191,7 +261,8 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
               flex: 3,
               child: TextFormField(
                 controller: ctrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 textAlign: TextAlign.right,
                 style: const TextStyle(
                   fontSize: 16,
@@ -200,20 +271,25 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
                 ),
                 decoration: InputDecoration(
                   hintText: '0',
-                  hintStyle: const TextStyle(fontSize: 14, color: AppTheme.borderColor),
+                  hintStyle: const TextStyle(
+                      fontSize: 14, color: AppTheme.borderColor),
                   suffixText: item.unit,
-                  suffixStyle: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  suffixStyle: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
                   isDense: true,
                   filled: true,
                   fillColor: const Color(0xFFF9FBF9),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: AppTheme.borderColor),
+                    borderSide:
+                        const BorderSide(color: AppTheme.borderColor),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: AppTheme.primaryGreen, width: 2),
+                    borderSide: const BorderSide(
+                        color: AppTheme.primaryGreen, width: 2),
                   ),
                 ),
               ),
@@ -231,29 +307,35 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 保存ボタン
           ElevatedButton.icon(
-            onPressed: _isSaving ? null : () => _saveAll(context, provider, items),
+            onPressed:
+                _isSaving ? null : () => _saveAll(context, provider, items),
             icon: _isSaving
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.save_outlined),
-            label: const Text('初期在庫を保存する', style: TextStyle(fontSize: 16)),
+            label: const Text('初期在庫を保存する（両工場まとめて）',
+                style: TextStyle(fontSize: 14)),
             style: ElevatedButton.styleFrom(
               minimumSize: const Size(double.infinity, 54),
               backgroundColor: AppTheme.primaryGreen,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
           const SizedBox(height: 8),
-          // 全クリアボタン
+          // 現在表示中の工場のみクリア
           OutlinedButton.icon(
-            onPressed: _isSaving ? null : () => _showClearConfirm(context, items),
+            onPressed:
+                _isSaving ? null : () => _showClearConfirm(context, provider),
             icon: const Icon(Icons.clear_all, size: 18),
-            label: const Text('全項目をクリア', style: TextStyle(fontSize: 14)),
+            label: Text(
+                '${StockProvider.locations[_tabController.index]} の入力を全てクリア',
+                style: const TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 44),
               foregroundColor: AppTheme.textSecondary,
@@ -272,7 +354,6 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
   ) async {
     setState(() => _isSaving = true);
 
-    // バリデーション
     final Map<String, double> updates = {};
     for (final item in items) {
       final ctrl = _controllers[item.id];
@@ -287,7 +368,8 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('${item.displayName} の入力値が不正です（0以上の数値を入力してください）'),
+                content: Text(
+                    '${item.location} ${item.displayName} の入力値が不正です（0以上の数値を入力してください）'),
                 backgroundColor: AppTheme.warningRed,
               ),
             );
@@ -322,12 +404,15 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
     }
   }
 
-  void _showClearConfirm(BuildContext context, List<StockItem> items) {
+  void _showClearConfirm(BuildContext context, StockProvider provider) {
+    final currentLocation =
+        StockProvider.locations[_tabController.index];
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('全項目をクリア'),
-        content: const Text('全品目の初期在庫入力欄を 0 にリセットします。\nよろしいですか？'),
+        title: Text('$currentLocation をクリア'),
+        content: Text(
+            '$currentLocation の全品目の初期在庫入力欄を 0 にリセットします。\nよろしいですか？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -336,8 +421,10 @@ class _InitialStockScreenState extends State<InitialStockScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              for (final ctrl in _controllers.values) {
-                ctrl.text = '';
+              final targetItems =
+                  provider.getStockItemsByLocation(currentLocation);
+              for (final item in targetItems) {
+                _controllers[item.id]?.text = '';
               }
               setState(() => _hasChanges = true);
             },

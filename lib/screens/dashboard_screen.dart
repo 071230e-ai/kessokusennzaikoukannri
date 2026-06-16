@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/stock_provider.dart';
-import '../models/stock_item.dart';
 import '../models/delivery_record.dart';
 import '../models/shipping_record.dart';
 import '../utils/app_theme.dart';
@@ -14,8 +13,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<StockProvider>(
       builder: (context, provider, _) {
-        final lowItems = provider.lowStockItems;
-        final allItems = provider.stockItems;
+        final summaries = provider.stockSummaries;
         final recentDeliveries = provider.deliveryRecords.take(5).toList();
         final recentShippings = provider.shippingRecords.take(5).toList();
 
@@ -28,32 +26,14 @@ class DashboardScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ヘッダーバナー
                   _buildHeader(context),
-
                   const SizedBox(height: 12),
-
-                  // 在庫警告
-                  if (lowItems.isNotEmpty) ...[
-                    _buildSection(
-                      context,
-                      title: '⚠️ 在庫が少ない品目',
-                      titleColor: AppTheme.warningRed,
-                      child: _buildLowStockWarning(lowItems),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // 在庫サマリー
                   _buildSection(
                     context,
-                    title: '📦 現在の在庫状況',
-                    child: _buildStockSummary(allItems),
+                    title: '📦 現在の在庫状況（本社／第二／合計）',
+                    child: _buildStockSummary(summaries),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // 最近の納入・出荷
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -74,7 +54,6 @@ class DashboardScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 80),
                 ],
               ),
@@ -106,7 +85,10 @@ class DashboardScreen extends StatelessWidget {
           const SizedBox(height: 2),
           const Text(
             '在庫管理システム',
-            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
@@ -144,56 +126,25 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLowStockWarning(List<StockItem> items) {
-    return Card(
-      color: AppTheme.warningRedLight,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppTheme.warningRed, width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: items.map((item) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded, color: AppTheme.warningRed, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      item.displayName,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                  ),
-                  Text(
-                    DateFormatter.formatQuantity(item.currentStock, item.unit),
-                    style: const TextStyle(
-                      color: AppTheme.warningRed,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStockSummary(List<StockItem> items) {
+  Widget _buildStockSummary(List<StockSummary> summaries) {
     // カテゴリ別にグループ化
-    final categories = <String, List<StockItem>>{};
-    for (final item in items) {
-      categories.putIfAbsent(item.category, () => []).add(item);
+    final byCategory = <String, List<StockSummary>>{};
+    for (final s in summaries) {
+      byCategory.putIfAbsent(s.category, () => []).add(s);
     }
 
     return Column(
-      children: categories.entries.map((entry) {
+      children: byCategory.entries.map((entry) {
+        // カテゴリ計（本社、第二、合計）
+        double catHonsha = 0, catDaini = 0;
+        String unit = 'kg';
+        for (final s in entry.value) {
+          catHonsha += s.honshaStock;
+          catDaini += s.dainiStock;
+          unit = s.unit;
+        }
+        final catTotal = catHonsha + catDaini;
+
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: Padding(
@@ -201,19 +152,71 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryGreen,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    entry.key,
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGreen,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '小計 ${DateFormatter.formatQuantity(catTotal, unit)}',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primaryGreen,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
-                ...entry.value.map((item) => _buildStockRow(item)),
+                // 行ヘッダー
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: const [
+                      Expanded(
+                          flex: 3,
+                          child: Text('規格',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('本社工場',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('第二工場',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('合計',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary))),
+                    ],
+                  ),
+                ),
+                const Divider(height: 6),
+                ...entry.value.map((s) => _buildSummaryDataRow(s)),
               ],
             ),
           ),
@@ -222,36 +225,55 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStockRow(StockItem item) {
-    final isLow = item.currentStock <= item.lowStockThreshold;
+  Widget _buildSummaryDataRow(StockSummary s) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           Expanded(
             flex: 3,
             child: Text(
-              item.spec == '-' ? '（単品）' : item.spec,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+              s.spec == '-' ? '（単品）' : s.spec,
+              style: const TextStyle(
+                  fontSize: 13, color: AppTheme.textSecondary),
             ),
           ),
           Expanded(
             flex: 2,
             child: Text(
-              DateFormatter.formatQuantity(item.currentStock, item.unit),
+              DateFormatter.formatQuantity(s.honshaStock, s.unit),
               textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: isLow ? AppTheme.warningRed : AppTheme.primaryGreen,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
-          if (isLow)
-            const Padding(
-              padding: EdgeInsets.only(left: 4),
-              child: Icon(Icons.arrow_downward, color: AppTheme.warningRed, size: 14),
+          Expanded(
+            flex: 2,
+            child: Text(
+              DateFormatter.formatQuantity(s.dainiStock, s.unit),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
             ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              DateFormatter.formatQuantity(s.totalStock, s.unit),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryGreen,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -263,7 +285,8 @@ class DashboardScreen extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Center(
-            child: Text('履歴なし', style: TextStyle(color: AppTheme.textSecondary)),
+            child: Text('履歴なし',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ),
         ),
       );
@@ -277,17 +300,33 @@ class DashboardScreen extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     DateFormatter.formatShort(r.deliveryDate),
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      r.spec == '-' ? r.category : '${r.category}\n${r.spec}',
-                      style: const TextStyle(fontSize: 11),
-                      maxLines: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          r.location,
+                          style: const TextStyle(
+                              fontSize: 9,
+                              color: AppTheme.primaryGreen,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          r.spec == '-'
+                              ? r.category
+                              : '${r.category} ${r.spec}',
+                          style: const TextStyle(fontSize: 11),
+                          maxLines: 2,
+                        ),
+                      ],
                     ),
                   ),
                   Text(
@@ -313,7 +352,8 @@ class DashboardScreen extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Center(
-            child: Text('履歴なし', style: TextStyle(color: AppTheme.textSecondary)),
+            child: Text('履歴なし',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ),
         ),
       );
@@ -327,17 +367,33 @@ class DashboardScreen extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     DateFormatter.formatShort(r.shippingDate),
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      r.spec == '-' ? r.category : '${r.category}\n${r.spec}',
-                      style: const TextStyle(fontSize: 11),
-                      maxLines: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          r.location,
+                          style: const TextStyle(
+                              fontSize: 9,
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          r.spec == '-'
+                              ? r.category
+                              : '${r.category} ${r.spec}',
+                          style: const TextStyle(fontSize: 11),
+                          maxLines: 2,
+                        ),
+                      ],
                     ),
                   ),
                   Text(

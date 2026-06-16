@@ -34,6 +34,11 @@ class StockItem extends HiveObject {
   @HiveField(9)
   DateTime? lastShippingDate;
 
+  /// 保管場所（'本社工場' / '第二工場'）。
+  /// 旧データで未設定の場合は '本社工場' として扱う。
+  @HiveField(10)
+  String location;
+
   StockItem({
     required this.id,
     required this.category,
@@ -45,6 +50,7 @@ class StockItem extends HiveObject {
     this.note,
     this.lastDeliveryDate,
     this.lastShippingDate,
+    this.location = '本社工場',
   });
 
   String get displayName => spec == '-' ? category : '$category $spec';

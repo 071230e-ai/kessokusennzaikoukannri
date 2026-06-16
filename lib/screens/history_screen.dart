@@ -14,10 +14,12 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProviderStateMixin {
+class _HistoryScreenState extends State<HistoryScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String? _filterCategory;
   String? _filterSpec;
+  String? _filterLocation;
   DateTime? _fromDate;
   DateTime? _toDate;
 
@@ -41,12 +43,14 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
         final deliveries = provider.getFilteredDeliveries(
           category: _filterCategory,
           spec: _filterSpec,
+          location: _filterLocation,
           fromDate: _fromDate,
           toDate: _toDate,
         );
         final shippings = provider.getFilteredShippings(
           category: _filterCategory,
           spec: _filterSpec,
+          location: _filterLocation,
           fromDate: _fromDate,
           toDate: _toDate,
         );
@@ -55,7 +59,6 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
           backgroundColor: const Color(0xFFF5F5F5),
           body: Column(
             children: [
-              // タブバー
               Container(
                 color: Colors.white,
                 child: TabBar(
@@ -85,14 +88,11 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   labelColor: AppTheme.primaryGreen,
                   unselectedLabelColor: AppTheme.textSecondary,
                   indicatorColor: AppTheme.primaryGreen,
-                  labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  labelStyle:
+                      const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
-
-              // フィルターエリア
               _buildFilterArea(provider),
-
-              // リスト
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
@@ -102,8 +102,6 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   ],
                 ),
               ),
-
-              // CSV出力
               _buildExportBar(provider, deliveries, shippings),
             ],
           ),
@@ -120,6 +118,33 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
         children: [
           const Divider(height: 1),
           const SizedBox(height: 10),
+          // 1段目: 保管場所
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: _filterLocation,
+                  decoration: const InputDecoration(
+                    labelText: '保管場所',
+                    contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                        value: null, child: Text('すべて')),
+                    ...StockProvider.locations.map((l) => DropdownMenuItem(
+                        value: l,
+                        child:
+                            Text(l, style: const TextStyle(fontSize: 13)))),
+                  ],
+                  onChanged: (v) => setState(() => _filterLocation = v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 2段目: 品目・規格
           Row(
             children: [
               Expanded(
@@ -127,12 +152,17 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   initialValue: _filterCategory,
                   decoration: const InputDecoration(
                     labelText: '品目',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
                     isDense: true,
                   ),
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('すべて')),
-                    ...provider.categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13)))),
+                    const DropdownMenuItem(
+                        value: null, child: Text('すべて')),
+                    ...provider.categories.map((c) => DropdownMenuItem(
+                        value: c,
+                        child:
+                            Text(c, style: const TextStyle(fontSize: 13)))),
                   ],
                   onChanged: (v) => setState(() {
                     _filterCategory = v;
@@ -146,14 +176,21 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   initialValue: _filterSpec,
                   decoration: const InputDecoration(
                     labelText: '規格',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
                     isDense: true,
                   ),
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('すべて')),
+                    const DropdownMenuItem(
+                        value: null, child: Text('すべて')),
                     ...(_filterCategory != null
-                        ? provider.getSpecsForCategory(_filterCategory!)
-                            .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13))))
+                        ? provider
+                            .getSpecsForCategory(_filterCategory!)
+                            .map((s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(s,
+                                    style:
+                                        const TextStyle(fontSize: 13))))
                         : []),
                   ],
                   onChanged: (v) => setState(() => _filterSpec = v),
@@ -164,18 +201,31 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _buildDateButton('開始日', _fromDate, (d) => setState(() => _fromDate = d))),
-              const Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('〜')),
-              Expanded(child: _buildDateButton('終了日', _toDate, (d) => setState(() => _toDate = d))),
-              if (_fromDate != null || _toDate != null || _filterCategory != null || _filterSpec != null)
+              Expanded(
+                  child: _buildDateButton(
+                      '開始日', _fromDate, (d) => setState(() => _fromDate = d))),
+              const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6),
+                  child: Text('〜')),
+              Expanded(
+                  child: _buildDateButton(
+                      '終了日', _toDate, (d) => setState(() => _toDate = d))),
+              if (_fromDate != null ||
+                  _toDate != null ||
+                  _filterCategory != null ||
+                  _filterSpec != null ||
+                  _filterLocation != null)
                 TextButton(
                   onPressed: () => setState(() {
                     _fromDate = null;
                     _toDate = null;
                     _filterCategory = null;
                     _filterSpec = null;
+                    _filterLocation = null;
                   }),
-                  child: const Text('クリア', style: TextStyle(fontSize: 12, color: AppTheme.warningRed)),
+                  child: const Text('クリア',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.warningRed)),
                 ),
             ],
           ),
@@ -184,7 +234,8 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildDateButton(String label, DateTime? date, Function(DateTime?) onChanged) {
+  Widget _buildDateButton(
+      String label, DateTime? date, Function(DateTime?) onChanged) {
     return InkWell(
       onTap: () async {
         final picked = await showDatePicker(
@@ -199,26 +250,36 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: date != null ? AppTheme.backgroundGreen : Colors.white,
-          border: Border.all(color: date != null ? AppTheme.primaryGreen : AppTheme.borderColor),
+          border: Border.all(
+              color: date != null
+                  ? AppTheme.primaryGreen
+                  : AppTheme.borderColor),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, size: 14, color: date != null ? AppTheme.primaryGreen : AppTheme.textSecondary),
+            Icon(Icons.calendar_today,
+                size: 14,
+                color: date != null
+                    ? AppTheme.primaryGreen
+                    : AppTheme.textSecondary),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
                 date != null ? DateFormatter.format(date) : label,
                 style: TextStyle(
                   fontSize: 12,
-                  color: date != null ? AppTheme.primaryGreen : AppTheme.textSecondary,
+                  color: date != null
+                      ? AppTheme.primaryGreen
+                      : AppTheme.textSecondary,
                 ),
               ),
             ),
             if (date != null)
               GestureDetector(
                 onTap: () => onChanged(null),
-                child: const Icon(Icons.close, size: 14, color: AppTheme.textSecondary),
+                child: const Icon(Icons.close,
+                    size: 14, color: AppTheme.textSecondary),
               ),
           ],
         ),
@@ -226,15 +287,43 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildDeliveryList(BuildContext context, List<DeliveryRecord> records, StockProvider provider) {
+  /// 保管場所バッジ
+  Widget _locationBadge(String location) {
+    final isHonsha = location == StockProvider.locationHonsha;
+    final color = isHonsha ? AppTheme.primaryGreen : Colors.indigo;
+    final icon = isHonsha ? Icons.factory_outlined : Icons.warehouse_outlined;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color, width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 2),
+          Text(location,
+              style: TextStyle(
+                  fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryList(BuildContext context,
+      List<DeliveryRecord> records, StockProvider provider) {
     if (records.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: AppTheme.textSecondary),
+            Icon(Icons.inbox_outlined,
+                size: 48, color: AppTheme.textSecondary),
             SizedBox(height: 8),
-            Text('納入履歴がありません', style: TextStyle(color: AppTheme.textSecondary)),
+            Text('納入履歴がありません',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ],
         ),
       );
@@ -250,7 +339,8 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildDeliveryCard(BuildContext context, DeliveryRecord r, StockProvider provider) {
+  Widget _buildDeliveryCard(BuildContext context, DeliveryRecord r,
+      StockProvider provider) {
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: Padding(
@@ -261,30 +351,41 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: AppTheme.backgroundGreen,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     DateFormatter.format(r.deliveryDate),
-                    style: const TextStyle(fontSize: 12, color: AppTheme.primaryGreen, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.primaryGreen,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                _locationBadge(r.location),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     r.spec == '-' ? r.category : '${r.category} ${r.spec}',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                 ),
                 Text(
                   DateFormatter.formatQuantity(r.quantity, r.unit),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primaryGreen),
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryGreen),
                 ),
               ],
             ),
-            if ((r.supplier?.isNotEmpty ?? false) || (r.staff?.isNotEmpty ?? false)) ...[
+            if ((r.supplier?.isNotEmpty ?? false) ||
+                (r.staff?.isNotEmpty ?? false)) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -299,16 +400,22 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             ],
             if (r.note?.isNotEmpty ?? false) ...[
               const SizedBox(height: 4),
-              Text(r.note!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+              Text(r.note!,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary)),
             ],
             const Divider(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
-                  onPressed: () => _confirmDeleteDelivery(context, r, provider),
-                  icon: const Icon(Icons.delete_outline, size: 16, color: AppTheme.warningRed),
-                  label: const Text('削除', style: TextStyle(fontSize: 12, color: AppTheme.warningRed)),
+                  onPressed: () =>
+                      _confirmDeleteDelivery(context, r, provider),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 16, color: AppTheme.warningRed),
+                  label: const Text('削除',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.warningRed)),
                   style: TextButton.styleFrom(
                     minimumSize: const Size(60, 32),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -322,15 +429,18 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildShippingList(BuildContext context, List<ShippingRecord> records, StockProvider provider) {
+  Widget _buildShippingList(BuildContext context,
+      List<ShippingRecord> records, StockProvider provider) {
     if (records.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: AppTheme.textSecondary),
+            Icon(Icons.inbox_outlined,
+                size: 48, color: AppTheme.textSecondary),
             SizedBox(height: 8),
-            Text('出荷・使用履歴がありません', style: TextStyle(color: AppTheme.textSecondary)),
+            Text('出荷・使用履歴がありません',
+                style: TextStyle(color: AppTheme.textSecondary)),
           ],
         ),
       );
@@ -346,7 +456,8 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildShippingCard(BuildContext context, ShippingRecord r, StockProvider provider) {
+  Widget _buildShippingCard(BuildContext context, ShippingRecord r,
+      StockProvider provider) {
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: Padding(
@@ -357,30 +468,41 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF3E0),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     DateFormatter.format(r.shippingDate),
-                    style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                _locationBadge(r.location),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     r.spec == '-' ? r.category : '${r.category} ${r.spec}',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                 ),
                 Text(
                   DateFormatter.formatQuantity(r.quantity, r.unit),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange),
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange),
                 ),
               ],
             ),
-            if ((r.destination?.isNotEmpty ?? false) || (r.staff?.isNotEmpty ?? false)) ...[
+            if ((r.destination?.isNotEmpty ?? false) ||
+                (r.staff?.isNotEmpty ?? false)) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -395,16 +517,22 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             ],
             if (r.note?.isNotEmpty ?? false) ...[
               const SizedBox(height: 4),
-              Text(r.note!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+              Text(r.note!,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary)),
             ],
             const Divider(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
-                  onPressed: () => _confirmDeleteShipping(context, r, provider),
-                  icon: const Icon(Icons.delete_outline, size: 16, color: AppTheme.warningRed),
-                  label: const Text('削除', style: TextStyle(fontSize: 12, color: AppTheme.warningRed)),
+                  onPressed: () =>
+                      _confirmDeleteShipping(context, r, provider),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 16, color: AppTheme.warningRed),
+                  label: const Text('削除',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.warningRed)),
                   style: TextButton.styleFrom(
                     minimumSize: const Size(60, 32),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -424,30 +552,38 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
       children: [
         Icon(icon, size: 13, color: AppTheme.textSecondary),
         const SizedBox(width: 2),
-        Text(text, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+        Text(text,
+            style: const TextStyle(
+                fontSize: 12, color: AppTheme.textSecondary)),
       ],
     );
   }
 
-  void _confirmDeleteDelivery(BuildContext context, DeliveryRecord r, StockProvider provider) {
+  void _confirmDeleteDelivery(BuildContext context, DeliveryRecord r,
+      StockProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('削除の確認'),
         content: Text(
           '${DateFormatter.format(r.deliveryDate)} の納入記録\n'
+          '【${r.location}】\n'
           '${r.spec == '-' ? r.category : '${r.category} ${r.spec}'}\n'
           '${DateFormatter.formatQuantity(r.quantity, r.unit)}\n\nを削除しますか？\n在庫数も自動で再計算されます。',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('キャンセル')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('キャンセル')),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await provider.deleteDelivery(r.id);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('納入記録を削除しました'), backgroundColor: AppTheme.warningRed),
+                  const SnackBar(
+                      content: Text('納入記録を削除しました'),
+                      backgroundColor: AppTheme.warningRed),
                 );
               }
             },
@@ -462,25 +598,31 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  void _confirmDeleteShipping(BuildContext context, ShippingRecord r, StockProvider provider) {
+  void _confirmDeleteShipping(BuildContext context, ShippingRecord r,
+      StockProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('削除の確認'),
         content: Text(
           '${DateFormatter.format(r.shippingDate)} の出荷・使用記録\n'
+          '【${r.location}】\n'
           '${r.spec == '-' ? r.category : '${r.category} ${r.spec}'}\n'
           '${DateFormatter.formatQuantity(r.quantity, r.unit)}\n\nを削除しますか？\n在庫数も自動で再計算されます。',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('キャンセル')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('キャンセル')),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await provider.deleteShipping(r.id);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('出荷・使用記録を削除しました'), backgroundColor: AppTheme.warningRed),
+                  const SnackBar(
+                      content: Text('出荷・使用記録を削除しました'),
+                      backgroundColor: AppTheme.warningRed),
                 );
               }
             },
@@ -495,7 +637,8 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildExportBar(StockProvider provider, List<DeliveryRecord> deliveries, List<ShippingRecord> shippings) {
+  Widget _buildExportBar(StockProvider provider,
+      List<DeliveryRecord> deliveries, List<ShippingRecord> shippings) {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.all(10),
@@ -514,7 +657,9 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                 final csv = _tabController.index == 0
                     ? CsvExport.generateDeliveryCsv(deliveries)
                     : CsvExport.generateShippingCsv(shippings);
-                final title = _tabController.index == 0 ? '納入履歴 CSV' : '出荷・使用履歴 CSV';
+                final title = _tabController.index == 0
+                    ? '納入履歴 CSV'
+                    : '出荷・使用履歴 CSV';
                 _showCsvDialog(context, csv, title);
               },
             ),
@@ -535,12 +680,15 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
           child: SingleChildScrollView(
             child: SelectableText(
               csv,
-              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              style:
+                  const TextStyle(fontSize: 11, fontFamily: 'monospace'),
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('閉じる')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('閉じる')),
         ],
       ),
     );

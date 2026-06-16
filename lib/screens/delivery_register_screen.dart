@@ -15,6 +15,7 @@ class DeliveryRegisterScreen extends StatefulWidget {
 class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   DateTime _selectedDate = DateTime.now();
+  String? _selectedLocation;
   String? _selectedCategory;
   String? _selectedSpec;
   StockItem? _selectedItem;
@@ -31,6 +32,21 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
     _staffCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
+  }
+
+  /// 場所・カテゴリ・規格が揃ったら該当の StockItem を解決
+  void _resolveSelectedItem(StockProvider provider) {
+    if (_selectedLocation != null &&
+        _selectedCategory != null &&
+        _selectedSpec != null) {
+      _selectedItem = provider.findStockItem(
+        category: _selectedCategory!,
+        spec: _selectedSpec!,
+        location: _selectedLocation!,
+      );
+    } else {
+      _selectedItem = null;
+    }
   }
 
   @override
@@ -53,11 +69,8 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 説明カード
                       _buildInfoCard(),
                       const SizedBox(height: 16),
-
-                      // フォームカード
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -69,18 +82,28 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
                               _buildDatePicker(),
                               const SizedBox(height: 16),
 
+                              // 保管場所
+                              _buildLabel('保管場所 *'),
+                              _buildLocationSelector(provider),
+                              const SizedBox(height: 16),
+
                               // 品目
                               _buildLabel('品目 *'),
                               DropdownButtonFormField<String>(
                                 initialValue: _selectedCategory,
-                                decoration: const InputDecoration(hintText: '品目を選択'),
-                                items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                                decoration: const InputDecoration(
+                                    hintText: '品目を選択'),
+                                items: categories
+                                    .map((c) => DropdownMenuItem(
+                                        value: c, child: Text(c)))
+                                    .toList(),
                                 onChanged: (v) => setState(() {
                                   _selectedCategory = v;
                                   _selectedSpec = null;
-                                  _selectedItem = null;
+                                  _resolveSelectedItem(provider);
                                 }),
-                                validator: (v) => v == null ? '品目を選択してください' : null,
+                                validator: (v) =>
+                                    v == null ? '品目を選択してください' : null,
                               ),
                               const SizedBox(height: 16),
 
@@ -91,18 +114,20 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
                                 decoration: const InputDecoration(
                                   hintText: '品目を先に選択してください',
                                 ),
-                                items: specs.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                                items: specs
+                                    .map((s) => DropdownMenuItem(
+                                        value: s, child: Text(s)))
+                                    .toList(),
                                 onChanged: _selectedCategory == null
                                     ? null
                                     : (v) {
-                                        setState(() => _selectedSpec = v);
-                                        if (v != null && _selectedCategory != null) {
-                                          _selectedItem = provider.stockItems.firstWhere(
-                                            (i) => i.category == _selectedCategory && i.spec == v,
-                                          );
-                                        }
+                                        setState(() {
+                                          _selectedSpec = v;
+                                          _resolveSelectedItem(provider);
+                                        });
                                       },
-                                validator: (v) => v == null ? '規格・長さを選択してください' : null,
+                                validator: (v) =>
+                                    v == null ? '規格・長さを選択してください' : null,
                               ),
 
                               if (_selectedItem != null) ...[
@@ -116,13 +141,17 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
                               _buildLabel('数量 *'),
                               TextFormField(
                                 controller: _quantityCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
                                 decoration: InputDecoration(
                                   hintText: '0',
                                   suffixText: _selectedItem?.unit ?? '',
                                 ),
                                 validator: (v) {
-                                  if (v == null || v.isEmpty) return '数量を入力してください';
+                                  if (v == null || v.isEmpty) {
+                                    return '数量を入力してください';
+                                  }
                                   final n = double.tryParse(v);
                                   if (n == null) return '数値を入力してください';
                                   if (n < 0) return '0以上の値を入力してください';
@@ -135,19 +164,19 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
                               _buildLabel('仕入先'),
                               TextFormField(
                                 controller: _supplierCtrl,
-                                decoration: const InputDecoration(hintText: '仕入先を入力'),
+                                decoration: const InputDecoration(
+                                    hintText: '仕入先を入力'),
                               ),
                               const SizedBox(height: 16),
 
-                              // 担当者
                               _buildLabel('担当者'),
                               TextFormField(
                                 controller: _staffCtrl,
-                                decoration: const InputDecoration(hintText: '担当者名を入力'),
+                                decoration: const InputDecoration(
+                                    hintText: '担当者名を入力'),
                               ),
                               const SizedBox(height: 16),
 
-                              // 備考
                               _buildLabel('備考'),
                               TextFormField(
                                 controller: _noteCtrl,
@@ -164,11 +193,16 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
 
                       const SizedBox(height: 20),
 
-                      // 登録ボタン
                       ElevatedButton.icon(
-                        onPressed: _isSubmitting ? null : () => _submit(provider),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _submit(provider),
                         icon: _isSubmitting
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.add_circle_outline),
                         label: const Text('納入を登録する'),
                         style: ElevatedButton.styleFrom(
@@ -179,7 +213,6 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
 
                       const SizedBox(height: 12),
 
-                      // リセットボタン
                       OutlinedButton.icon(
                         onPressed: _resetForm,
                         icon: const Icon(Icons.refresh, size: 18),
@@ -212,11 +245,12 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
       ),
       child: const Row(
         children: [
-          Icon(Icons.local_shipping_outlined, color: AppTheme.primaryGreen, size: 20),
+          Icon(Icons.local_shipping_outlined,
+              color: AppTheme.primaryGreen, size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              '納入情報を入力してください。登録後、自動で在庫数に反映されます。',
+              '納入情報を入力してください。保管場所別に在庫数へ反映されます。',
               style: TextStyle(fontSize: 13, color: AppTheme.primaryGreen),
             ),
           ),
@@ -230,7 +264,89 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textPrimary),
+      ),
+    );
+  }
+
+  Widget _buildLocationSelector(StockProvider provider) {
+    return FormField<String>(
+      initialValue: _selectedLocation,
+      validator: (v) => (v == null || v.isEmpty) ? '保管場所を選択してください' : null,
+      builder: (field) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: StockProvider.locations.map((loc) {
+              final selected = _selectedLocation == loc;
+              final iconData = loc == StockProvider.locationHonsha
+                  ? Icons.factory_outlined
+                  : Icons.warehouse_outlined;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedLocation = loc;
+                        _resolveSelectedItem(provider);
+                      });
+                      field.didChange(loc);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppTheme.primaryGreen
+                            : Colors.white,
+                        border: Border.all(
+                          color: selected
+                              ? AppTheme.primaryGreen
+                              : AppTheme.borderColor,
+                          width: selected ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(iconData,
+                              size: 18,
+                              color: selected
+                                  ? Colors.white
+                                  : AppTheme.primaryGreen),
+                          const SizedBox(width: 6),
+                          Text(
+                            loc,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: selected
+                                  ? Colors.white
+                                  : AppTheme.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          if (field.hasError)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 12),
+              child: Text(field.errorText!,
+                  style: const TextStyle(
+                      color: AppTheme.warningRed, fontSize: 12)),
+            ),
+        ],
       ),
     );
   }
@@ -255,14 +371,16 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_today, size: 18, color: AppTheme.primaryGreen),
+            const Icon(Icons.calendar_today,
+                size: 18, color: AppTheme.primaryGreen),
             const SizedBox(width: 10),
             Text(
               DateFormatter.format(_selectedDate),
               style: const TextStyle(fontSize: 16),
             ),
             const Spacer(),
-            const Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary),
+            const Icon(Icons.arrow_drop_down,
+                color: AppTheme.textSecondary),
           ],
         ),
       ),
@@ -278,11 +396,15 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.inventory_2_outlined, size: 16, color: AppTheme.primaryGreen),
+          const Icon(Icons.inventory_2_outlined,
+              size: 16, color: AppTheme.primaryGreen),
           const SizedBox(width: 6),
           Text(
-            '現在庫: ${DateFormatter.formatQuantity(item.currentStock, item.unit)}',
-            style: const TextStyle(fontSize: 13, color: AppTheme.primaryGreen, fontWeight: FontWeight.bold),
+            '${item.location} の現在庫: ${DateFormatter.formatQuantity(item.currentStock, item.unit)}',
+            style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.primaryGreen,
+                fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -312,7 +434,8 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${_selectedItem!.displayName} を ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)} 納入登録しました'),
+          content: Text(
+              '${_selectedItem!.location} ${_selectedItem!.displayName} を ${DateFormatter.formatQuantity(qty, _selectedItem!.unit)} 納入登録しました'),
           backgroundColor: AppTheme.primaryGreen,
           duration: const Duration(seconds: 3),
         ),
@@ -324,6 +447,7 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
   void _resetForm() {
     setState(() {
       _selectedDate = DateTime.now();
+      _selectedLocation = null;
       _selectedCategory = null;
       _selectedSpec = null;
       _selectedItem = null;

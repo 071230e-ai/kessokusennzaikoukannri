@@ -34,6 +34,11 @@ class DeliveryRecord extends HiveObject {
   @HiveField(9)
   String? note;
 
+  /// 保管場所（'本社工場' / '第二工場'）。
+  /// 旧データで未設定の場合は '本社工場' として扱う。
+  @HiveField(10)
+  String location;
+
   DeliveryRecord({
     required this.id,
     required this.stockItemId,
@@ -45,5 +50,6 @@ class DeliveryRecord extends HiveObject {
     this.supplier,
     this.staff,
     this.note,
+    this.location = '本社工場',
   });
 }

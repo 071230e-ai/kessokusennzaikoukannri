@@ -27,13 +27,15 @@ class ShippingRecordAdapter extends TypeAdapter<ShippingRecord> {
       destination: fields[7] as String?,
       staff: fields[8] as String?,
       note: fields[9] as String?,
+      // 旧データで location 未設定の場合は '本社工場' として扱う
+      location: (fields[10] as String?) ?? '本社工場',
     );
   }
 
   @override
   void write(BinaryWriter writer, ShippingRecord obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +55,9 @@ class ShippingRecordAdapter extends TypeAdapter<ShippingRecord> {
       ..writeByte(8)
       ..write(obj.staff)
       ..writeByte(9)
-      ..write(obj.note);
+      ..write(obj.note)
+      ..writeByte(10)
+      ..write(obj.location);
   }
 
   @override

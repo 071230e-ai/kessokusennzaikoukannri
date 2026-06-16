@@ -27,11 +27,17 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
+
+# Node / PM2 (sandbox preview only)
+node_modules/
+.pm2/
+*.tar.gz
 
 # Symbolication related
 app.*.symbols
