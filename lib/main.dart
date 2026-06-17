@@ -8,6 +8,7 @@ import 'screens/delivery_register_screen.dart';
 import 'screens/shipping_register_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/initial_stock_screen.dart';
+import 'screens/period_summary_screen.dart';
 import 'screens/login_screen.dart';
 import 'utils/app_theme.dart';
 
@@ -172,6 +173,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     _NavItem(icon: Icons.add_circle_outline,      activeIcon: Icons.add_circle,     label: '納入登録'),
     _NavItem(icon: Icons.output_outlined,         activeIcon: Icons.output,         label: '出荷登録'),
     _NavItem(icon: Icons.history_outlined,        activeIcon: Icons.history,        label: '履歴'),
+    _NavItem(icon: Icons.analytics_outlined,      activeIcon: Icons.analytics,      label: '期間集計'),
     _NavItem(icon: Icons.tune_outlined,           activeIcon: Icons.tune,           label: '初期在庫'),
   ];
 
@@ -181,6 +183,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     '納入登録',
     '出荷・使用登録',
     '履歴',
+    '期間集計',
     '初期在庫設定',
   ];
 
@@ -190,6 +193,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     DeliveryRegisterScreen(),
     ShippingRegisterScreen(),
     HistoryScreen(),
+    PeriodSummaryScreen(),
     InitialStockScreen(),
   ];
 
@@ -256,6 +260,11 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (i) => setState(() => _currentIndex = i),
+          // 7項目なので fixed タイプで全タブ常時表示
+          type: BottomNavigationBarType.fixed,
+          showUnselectedLabels: true,
+          selectedFontSize: 10,
+          unselectedFontSize: 10,
           items: _navItems.map((item) {
             return BottomNavigationBarItem(
               icon: Icon(item.icon),
