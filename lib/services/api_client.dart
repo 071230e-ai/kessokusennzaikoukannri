@@ -40,6 +40,20 @@ class ApiClient {
     return _handle(res);
   }
 
+  /// JSON PUT
+  static Future<Map<String, dynamic>> putJson(
+      String path, Map<String, dynamic> body) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl$path'),
+      headers: const {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _handle(res);
+  }
+
   /// DELETE
   static Future<Map<String, dynamic>> delete(String path) async {
     final res = await http.delete(

@@ -196,6 +196,70 @@ class StockProvider extends ChangeNotifier {
   }
 
   // =====================================================================
+  // 履歴更新
+  // =====================================================================
+
+  /// 納入履歴の更新。
+  /// 在庫数は GET /api/stocks が都度計算するため、ここでは
+  /// PUT 後に refreshAll() を呼ぶだけで在庫が正しく再計算される。
+  Future<void> updateDelivery({
+    required String recordId,
+    required String stockItemId,
+    required DateTime deliveryDate,
+    required double quantity,
+    String? supplier,
+    String? staff,
+    String? note,
+  }) async {
+    final item = getStockItem(stockItemId);
+    if (item == null) return;
+    await ApiClient.putJson('/api/deliveries/$recordId', {
+      'item_id': item.itemId,
+      'location_id': item.locationId,
+      'delivery_date': _formatDate(deliveryDate),
+      'quantity': quantity,
+      'supplier': supplier,
+      'staff': staff,
+      'note': note,
+    });
+    await refreshAll();
+  }
+
+  /// 出荷・使用履歴の更新。
+  /// 在庫不足の場合は false を返す（変更前の数量を一度戻した状態でサーバ側がチェック）。
+  Future<bool> updateShipping({
+    required String recordId,
+    required String stockItemId,
+    required DateTime shippingDate,
+    required double quantity,
+    String? destination,
+    String? staff,
+    String? note,
+  }) async {
+    final item = getStockItem(stockItemId);
+    if (item == null) return false;
+    try {
+      await ApiClient.putJson('/api/shipments/$recordId', {
+        'item_id': item.itemId,
+        'location_id': item.locationId,
+        'shipping_date': _formatDate(shippingDate),
+        'quantity': quantity,
+        'destination': destination,
+        'staff': staff,
+        'note': note,
+      });
+    } on ApiException catch (e) {
+      if (e.status == 409) {
+        await refreshAll();
+        return false;
+      }
+      rethrow;
+    }
+    await refreshAll();
+    return true;
+  }
+
+  // =====================================================================
   // 履歴削除
   // =====================================================================
 

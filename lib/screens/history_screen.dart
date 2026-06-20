@@ -6,6 +6,7 @@ import '../models/shipping_record.dart';
 import '../utils/app_theme.dart';
 import '../utils/date_formatter.dart';
 import '../utils/csv_export.dart';
+import 'edit_history_dialogs.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -410,6 +411,20 @@ class _HistoryScreenState extends State<HistoryScreen>
               children: [
                 TextButton.icon(
                   onPressed: () =>
+                      showEditDeliveryDialog(context, r, provider),
+                  icon: const Icon(Icons.edit_outlined,
+                      size: 16, color: AppTheme.primaryGreen),
+                  label: const Text('編集',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.primaryGreen)),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(60, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                TextButton.icon(
+                  onPressed: () =>
                       _confirmDeleteDelivery(context, r, provider),
                   icon: const Icon(Icons.delete_outline,
                       size: 16, color: AppTheme.warningRed),
@@ -525,6 +540,20 @@ class _HistoryScreenState extends State<HistoryScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                TextButton.icon(
+                  onPressed: () =>
+                      showEditShippingDialog(context, r, provider),
+                  icon: const Icon(Icons.edit_outlined,
+                      size: 16, color: AppTheme.primaryGreen),
+                  label: const Text('編集',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.primaryGreen)),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(60, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 TextButton.icon(
                   onPressed: () =>
                       _confirmDeleteShipping(context, r, provider),
