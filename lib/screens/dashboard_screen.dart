@@ -5,6 +5,8 @@ import '../models/delivery_record.dart';
 import '../models/shipping_record.dart';
 import '../utils/app_theme.dart';
 import '../utils/date_formatter.dart';
+import 'inventory_check_widgets.dart';
+import 'inventory_check_history_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -28,6 +30,7 @@ class DashboardScreen extends StatelessWidget {
                 children: [
                   _buildHeader(context),
                   const SizedBox(height: 12),
+                  const InventoryCheckNotice(),
                   _buildSection(
                     context,
                     title: '📦 現在の在庫状況（本社／第二／合計）',
@@ -91,9 +94,34 @@ class DashboardScreen extends StatelessWidget {
                 fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Text(
-            '最終更新: ${DateFormatter.format(DateTime.now())}',
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          Row(
+            children: [
+              Text(
+                '最終更新: ${DateFormatter.format(DateTime.now())}',
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(50, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                icon: const Icon(Icons.fact_check_outlined,
+                    size: 14, color: Colors.white70),
+                label: const Text('在庫確認履歴',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.white70)),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          const InventoryCheckHistoryScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),

@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import '../models/stock_item.dart';
 import '../models/delivery_record.dart';
 import '../models/shipping_record.dart';
+import '../models/inventory_check.dart';
 import '../services/api_client.dart';
+import '../utils/jst_time.dart';
 
 /// Cloudflare D1（Pages Functions API）ベースの在庫プロバイダ。
 ///
@@ -32,6 +34,7 @@ class StockProvider extends ChangeNotifier {
   List<StockItem> _stockItems = [];
   List<DeliveryRecord> _deliveryRecords = [];
   List<ShippingRecord> _shippingRecords = [];
+  List<InventoryCheck> _inventoryChecks = [];
 
   /// category|spec → 表示順
   final Map<String, int> _itemOrderMap = {};
@@ -44,6 +47,7 @@ class StockProvider extends ChangeNotifier {
   List<StockItem> get stockItems => List.unmodifiable(_stockItems);
   List<DeliveryRecord> get deliveryRecords => List.unmodifiable(_deliveryRecords);
   List<ShippingRecord> get shippingRecords => List.unmodifiable(_shippingRecords);
+  List<InventoryCheck> get inventoryChecks => List.unmodifiable(_inventoryChecks);
 
   // =====================================================================
   // 初期化／リロード
@@ -66,10 +70,12 @@ class StockProvider extends ChangeNotifier {
         ApiClient.getJson('/api/stocks'),
         ApiClient.getJson('/api/deliveries'),
         ApiClient.getJson('/api/shipments'),
+        ApiClient.getJson('/api/inventory-checks'),
       ]);
       final stocksJson = (results[0]['stocks'] as List?) ?? [];
       final delsJson = (results[1]['deliveries'] as List?) ?? [];
       final shpsJson = (results[2]['shipments'] as List?) ?? [];
+      final checksJson = (results[3]['checks'] as List?) ?? [];
 
       _stockItems = stocksJson
           .map((r) => StockItem.fromStockRow(r as Map<String, dynamic>))
@@ -79,6 +85,9 @@ class StockProvider extends ChangeNotifier {
           .toList();
       _shippingRecords = shpsJson
           .map((r) => ShippingRecord.fromApi(r as Map<String, dynamic>))
+          .toList();
+      _inventoryChecks = checksJson
+          .map((r) => InventoryCheck.fromApi(r as Map<String, dynamic>))
           .toList();
 
       // 表示順マップを再構築（/api/stocks の並びをそのまま採用）
@@ -271,6 +280,139 @@ class StockProvider extends ChangeNotifier {
   Future<void> deleteShipping(String recordId) async {
     await ApiClient.delete('/api/shipments/$recordId');
     await refreshAll();
+  }
+
+  // =====================================================================
+  // 在庫確認（実在庫照合）
+  // =====================================================================
+
+  /// 当月 (JST) の確認を完了登録する。
+  ///
+  /// [locationName] は '本社工場' または '第二工場'。
+  /// サーバ側で UNIQUE(year, month, location_id) なので同月の重複は upsert される。
+  Future<bool> markInventoryCheckCompleted({
+    required int year,
+    required int month,
+    required String locationName,
+    String? checkedBy,
+    String? note,
+  }) async {
+    // location_id を在庫データから解決（locations マスタの id）
+    final loc = _stockItems.firstWhere(
+      (s) => s.location == locationName,
+      orElse: () => throw StateError('location not found: $locationName'),
+    );
+    final nowJst = JstTime.now();
+    await ApiClient.postJson('/api/inventory-checks', {
+      'target_year': year,
+      'target_month': month,
+      'location_id': loc.locationId,
+      'checked_at': JstTime.formatIso(nowJst),
+      'checked_by': checkedBy,
+      'note': note,
+    });
+    await refreshAll();
+    return true;
+  }
+
+  /// 在庫確認の完了状態を取り消す（DBから行を削除）。
+  /// → 当月分の場合、通知が再表示される。
+  Future<void> revokeInventoryCheck(int recordId) async {
+    await ApiClient.delete('/api/inventory-checks/$recordId');
+    await refreshAll();
+  }
+
+  /// 当月 (JST) 内で未完了の工場名一覧を返す。
+  /// 「毎月1日以降の未完了通知」表示判定に使う。
+  List<String> getCurrentMonthUncompletedLocations() {
+    final (year, month) = JstTime.currentYearMonth();
+    final completed = _inventoryChecks
+        .where((c) => c.targetYear == year && c.targetMonth == month)
+        .map((c) => c.location)
+        .toSet();
+    return locations.where((loc) => !completed.contains(loc)).toList();
+  }
+
+  /// 当月 (JST) の各工場の確認状態を返す。
+  /// 戻り値は location → InventoryCheck?（null は未完了）。
+  Map<String, InventoryCheck?> getCurrentMonthCheckStatus() {
+    final (year, month) = JstTime.currentYearMonth();
+    final byLoc = <String, InventoryCheck?>{};
+    for (final loc in locations) {
+      byLoc[loc] = _inventoryChecks
+          .where((c) =>
+              c.targetYear == year &&
+              c.targetMonth == month &&
+              c.location == loc)
+          .cast<InventoryCheck?>()
+          .firstWhere((_) => true, orElse: () => null);
+    }
+    return byLoc;
+  }
+
+  /// 過去月（当月より前）で未完了の工場・年月の組み合わせを返す。
+  /// 過去月で完了した行が無いものを「未完了」とみなす。
+  /// 対象期間は inventory_checks にレコードが1件でも存在する最古の年月〜先月。
+  /// レコードが無い場合は空配列を返す（運用開始前の過去月は遡らない）。
+  List<({int year, int month, String location})> getPastUncompleted() {
+    if (_inventoryChecks.isEmpty) return [];
+    final (curY, curM) = JstTime.currentYearMonth();
+
+    // 当月より過去の最古の年月を取得
+    final pastRecords = _inventoryChecks.where((c) {
+      if (c.targetYear < curY) return true;
+      if (c.targetYear == curY && c.targetMonth < curM) return true;
+      return false;
+    }).toList();
+    if (pastRecords.isEmpty) return [];
+
+    int oldestY = curY, oldestM = curM;
+    for (final r in pastRecords) {
+      if (r.targetYear < oldestY ||
+          (r.targetYear == oldestY && r.targetMonth < oldestM)) {
+        oldestY = r.targetYear;
+        oldestM = r.targetMonth;
+      }
+    }
+
+    // oldestY/M〜先月 までを走査し、各 (year, month, location) で完了行が無いものを集める
+    final completedSet = <String>{};
+    for (final c in _inventoryChecks) {
+      completedSet.add('${c.targetYear}|${c.targetMonth}|${c.location}');
+    }
+
+    final result = <({int year, int month, String location})>[];
+    int y = oldestY;
+    int m = oldestM;
+    while (y < curY || (y == curY && m < curM)) {
+      for (final loc in locations) {
+        if (!completedSet.contains('$y|$m|$loc')) {
+          result.add((year: y, month: m, location: loc));
+        }
+      }
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+    return result;
+  }
+
+  /// 「2026年7月 本社工場」のレコードを取得（無ければ null）
+  InventoryCheck? findCheck({
+    required int year,
+    required int month,
+    required String locationName,
+  }) {
+    for (final c in _inventoryChecks) {
+      if (c.targetYear == year &&
+          c.targetMonth == month &&
+          c.location == locationName) {
+        return c;
+      }
+    }
+    return null;
   }
 
   // =====================================================================
