@@ -231,6 +231,12 @@ class _PeriodSummaryScreenState extends State<PeriodSummaryScreen> {
           initialDate: current,
           firstDate: DateTime(2020),
           lastDate: DateTime(2030, 12, 31),
+          locale: const Locale('ja', 'JP'),
+          builder: (context, child) => Localizations.override(
+            context: context,
+            locale: const Locale('ja', 'JP'),
+            child: child,
+          ),
         );
         if (picked != null) onChanged(picked);
       },

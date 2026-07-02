@@ -10,7 +10,7 @@ class CsvExport {
 
   static String generateStockCsv(List<StockItem> items) {
     final buf = StringBuffer();
-    buf.writeln('保管場所,品目,規格,単位,初期在庫,現在庫,最終納入日,最終出荷日,備考');
+    buf.writeln('保管場所,品目,規格,単位,基準在庫,現在庫,最終納入日,最終出荷日,備考');
     for (final item in items) {
       buf.writeln(
         '"${item.location}","${item.category}","${item.spec}","${item.unit}",'

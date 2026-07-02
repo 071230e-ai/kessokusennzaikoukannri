@@ -538,7 +538,7 @@ class _StockListScreenState extends State<StockListScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               icon: const Icon(Icons.edit_calendar_outlined, size: 18),
-              label: const Text('初期在庫を設定する',
+              label: const Text('在庫修正へ移動',
                   style: TextStyle(fontSize: 14)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF388E3C),
@@ -558,7 +558,7 @@ class _StockListScreenState extends State<StockListScreen> {
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white)),
-                            Text('初期在庫設定',
+                            Text('在庫修正',
                                 style: TextStyle(
                                     fontSize: 11, color: Colors.white70)),
                           ],

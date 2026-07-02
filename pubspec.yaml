@@ -9,10 +9,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.2
   provider: 6.1.5+1
   shared_preferences: 2.5.3
-  intl: ^0.19.0
+  intl: ^0.20.2
   uuid: ^4.3.3
   csv: ^6.0.0
   path_provider: ^2.1.2

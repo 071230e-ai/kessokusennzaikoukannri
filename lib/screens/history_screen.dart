@@ -244,6 +244,12 @@ class _HistoryScreenState extends State<HistoryScreen>
           initialDate: date ?? DateTime.now(),
           firstDate: DateTime(2020),
           lastDate: DateTime(2030),
+          locale: const Locale('ja', 'JP'),
+          builder: (context, child) => Localizations.override(
+            context: context,
+            locale: const Locale('ja', 'JP'),
+            child: child,
+          ),
         );
         onChanged(picked);
       },

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'providers/stock_provider.dart';
 import 'providers/auth_provider.dart';
@@ -34,6 +35,17 @@ class WireStockApp extends StatelessWidget {
       title: '村田鉄筋㈱ 結束線・タイワイヤ在庫管理',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
+      // 日本語ロケール設定（DatePicker / MaterialLocalizations すべてを日本語化）
+      locale: const Locale('ja', 'JP'),
+      supportedLocales: const [
+        Locale('ja', 'JP'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: const _AuthGate(),
     );
   }
@@ -174,7 +186,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     _NavItem(icon: Icons.output_outlined,         activeIcon: Icons.output,         label: '出荷登録'),
     _NavItem(icon: Icons.history_outlined,        activeIcon: Icons.history,        label: '履歴'),
     _NavItem(icon: Icons.analytics_outlined,      activeIcon: Icons.analytics,      label: '期間集計'),
-    _NavItem(icon: Icons.tune_outlined,           activeIcon: Icons.tune,           label: '初期在庫'),
+    _NavItem(icon: Icons.tune_outlined,           activeIcon: Icons.tune,           label: '在庫修正'),
   ];
 
   static const List<String> _titles = [
@@ -184,7 +196,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     '出荷・使用登録',
     '履歴',
     '期間集計',
-    '初期在庫設定',
+    '在庫修正',
   ];
 
   final List<Widget> _screens = const [
@@ -345,7 +357,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                 style: TextStyle(
                     fontSize: 12, color: AppTheme.primaryGreen)),
             SizedBox(height: 8),
-            Text('・現在庫＝初期在庫＋納入−出荷・使用',
+            Text('・現在庫＝最新の在庫修正数量＋修正日時以降の納入−修正日時以降の出荷',
                 style: TextStyle(fontSize: 12)),
           ],
         ),

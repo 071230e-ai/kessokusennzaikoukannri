@@ -1,6 +1,20 @@
 // GET  /api/deliveries  納入履歴の取得（新しい順）
 // POST /api/deliveries  納入登録
-import { Env, errorResponse, jsonResponse, parseJson, uuid } from './_utils';
+//
+// 【transaction_at】
+// クライアントは delivery_date (YYYY-MM-DD) のみを送る。サーバ側で
+// normalizeTransactionAt() により 'YYYY-MM-DDT00:00:00+09:00' を生成し
+// transaction_at カラムに保存する。
+// これにより在庫修正日時 (adjusted_at) との datetime() 比較が正しく機能し、
+// 日付変更が現在庫にリアルタイムで反映されるようになる。
+import {
+  Env,
+  errorResponse,
+  jsonResponse,
+  parseJson,
+  uuid,
+  normalizeTransactionAt,
+} from './_utils';
 
 interface DeliveryPayload {
   item_id?: number;
@@ -23,6 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
         d.location_id         AS location_id,
         l.name                AS location,
         d.delivery_date       AS delivery_date,
+        d.transaction_at      AS transaction_at,
         d.quantity            AS quantity,
         d.supplier            AS supplier,
         d.staff               AS staff,
@@ -50,17 +65,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   ) {
     return errorResponse('invalid parameters');
   }
+  const txnAt = normalizeTransactionAt(delivery_date);
+  if (!txnAt) return errorResponse('invalid delivery_date');
+
   const id = uuid();
   await env.DB.prepare(
     `INSERT INTO delivery_records
-       (id, item_id, location_id, delivery_date, quantity, supplier, staff, note)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+       (id, item_id, location_id, delivery_date, transaction_at, quantity, supplier, staff, note)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
   )
     .bind(
       id,
       item_id,
       location_id,
       delivery_date,
+      txnAt,
       quantity,
       body.supplier ?? null,
       body.staff ?? null,

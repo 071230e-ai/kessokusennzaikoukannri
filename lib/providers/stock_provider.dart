@@ -3,6 +3,7 @@ import '../models/stock_item.dart';
 import '../models/delivery_record.dart';
 import '../models/shipping_record.dart';
 import '../models/inventory_check.dart';
+import '../models/stock_adjustment.dart';
 import '../services/api_client.dart';
 import '../utils/jst_time.dart';
 
@@ -35,6 +36,7 @@ class StockProvider extends ChangeNotifier {
   List<DeliveryRecord> _deliveryRecords = [];
   List<ShippingRecord> _shippingRecords = [];
   List<InventoryCheck> _inventoryChecks = [];
+  List<StockAdjustment> _stockAdjustments = [];
 
   /// category|spec → 表示順
   final Map<String, int> _itemOrderMap = {};
@@ -48,6 +50,7 @@ class StockProvider extends ChangeNotifier {
   List<DeliveryRecord> get deliveryRecords => List.unmodifiable(_deliveryRecords);
   List<ShippingRecord> get shippingRecords => List.unmodifiable(_shippingRecords);
   List<InventoryCheck> get inventoryChecks => List.unmodifiable(_inventoryChecks);
+  List<StockAdjustment> get stockAdjustments => List.unmodifiable(_stockAdjustments);
 
   // =====================================================================
   // 初期化／リロード
@@ -71,11 +74,13 @@ class StockProvider extends ChangeNotifier {
         ApiClient.getJson('/api/deliveries'),
         ApiClient.getJson('/api/shipments'),
         ApiClient.getJson('/api/inventory-checks'),
+        ApiClient.getJson('/api/stock-adjustments'),
       ]);
       final stocksJson = (results[0]['stocks'] as List?) ?? [];
       final delsJson = (results[1]['deliveries'] as List?) ?? [];
       final shpsJson = (results[2]['shipments'] as List?) ?? [];
       final checksJson = (results[3]['checks'] as List?) ?? [];
+      final adjsJson = (results[4]['adjustments'] as List?) ?? [];
 
       _stockItems = stocksJson
           .map((r) => StockItem.fromStockRow(r as Map<String, dynamic>))
@@ -88,6 +93,9 @@ class StockProvider extends ChangeNotifier {
           .toList();
       _inventoryChecks = checksJson
           .map((r) => InventoryCheck.fromApi(r as Map<String, dynamic>))
+          .toList();
+      _stockAdjustments = adjsJson
+          .map((r) => StockAdjustment.fromApi(r as Map<String, dynamic>))
           .toList();
 
       // 表示順マップを再構築（/api/stocks の並びをそのまま採用）
@@ -139,6 +147,92 @@ class StockProvider extends ChangeNotifier {
       });
     }
     await refreshAll();
+  }
+
+  // =====================================================================
+  // 在庫修正（stock_adjustments）
+  // =====================================================================
+
+  /// 指定工場の複数品目を1リクエストで一括修正する。
+  ///
+  /// [items] は `(stockItemId, adjustedStock)` のリスト。
+  /// stockItemId は `<itemId>_<locId>` 形式（StockItem.id）。
+  /// サーバ側で D1 batch により atomic に書き込まれる。
+  ///
+  /// 戻り値は `{ok, adjustment_group_id, count}`。
+  /// 失敗時は ApiException を投げる（呼び出し側でハンドリング）。
+  Future<Map<String, dynamic>> saveBulkAdjustments({
+    required String locationName,
+    required List<({String stockItemId, double adjustedStock})> items,
+    String? adjustedBy,
+    String? note,
+  }) async {
+    if (items.isEmpty) {
+      throw ArgumentError('items is empty');
+    }
+    // location_id を解決
+    final anyStock = _stockItems.firstWhere(
+      (s) => s.location == locationName,
+      orElse: () => throw StateError('location not found: $locationName'),
+    );
+    final locationId = anyStock.locationId;
+
+    // 各品目の previous_stock（現在庫）と item_id を解決
+    final payloadItems = <Map<String, dynamic>>[];
+    for (final e in items) {
+      final s = getStockItem(e.stockItemId);
+      if (s == null) {
+        throw StateError('stock item not found: ${e.stockItemId}');
+      }
+      if (s.location != locationName) {
+        throw StateError(
+          'location mismatch: ${e.stockItemId} is ${s.location}, expected $locationName',
+        );
+      }
+      payloadItems.add({
+        'item_id': s.itemId,
+        'previous_stock': s.currentStock,
+        'adjusted_stock': e.adjustedStock,
+      });
+    }
+
+    final nowJst = JstTime.now();
+    final res = await ApiClient.postJson('/api/stock-adjustments', {
+      'location_id': locationId,
+      'adjusted_at': JstTime.formatIso(nowJst),
+      'adjusted_by': adjustedBy,
+      'note': note,
+      'items': payloadItems,
+    });
+    await refreshAll();
+    return res;
+  }
+
+  /// 特定 (item, location) の最新の在庫修正を取得（未修正なら null）。
+  StockAdjustment? getLatestAdjustment({
+    required int itemId,
+    required int locationId,
+  }) {
+    StockAdjustment? latest;
+    for (final a in _stockAdjustments) {
+      if (a.itemId != itemId || a.locationId != locationId) continue;
+      if (latest == null || a.adjustedAt.isAfter(latest.adjustedAt)) {
+        latest = a;
+      }
+    }
+    return latest;
+  }
+
+  /// 特定 (item, location) の在庫修正履歴（新しい順）
+  List<StockAdjustment> getAdjustmentsForItem({
+    required int itemId,
+    required int locationId,
+  }) {
+    final list = _stockAdjustments
+        .where((a) => a.itemId == itemId && a.locationId == locationId)
+        .toList();
+    list.sort((a, b) => b.adjustedAt.compareTo(a.adjustedAt));
+    return list;
   }
 
   // =====================================================================

@@ -475,6 +475,12 @@ class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
           initialDate: _selectedDate,
           firstDate: DateTime(2020),
           lastDate: DateTime(2030),
+          locale: const Locale('ja', 'JP'),
+          builder: (context, child) => Localizations.override(
+            context: context,
+            locale: const Locale('ja', 'JP'),
+            child: child,
+          ),
         );
         if (picked != null) setState(() => _selectedDate = picked);
       },
